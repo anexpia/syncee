@@ -54,8 +54,6 @@ exposed.serdes = {
 	
 	any = Constants.anySerdes,
 	anytable = Constants.anyTableSerdes,
-	
-	replicationarray = Constants.DataSerdes,
 }
 
 -- server
@@ -102,8 +100,8 @@ exposed.server.Set = implementation.Set :: typeof(
 )
 
 exposed.server.GetDataToReplicate = implementation.GetDataToReplicate :: typeof(
-	-- Returns a dictionary mapping each player to an array of buffers containing new data to replicate.
-	function(): {[Player]: {[number]: buffer}}
+	-- Returns a dictionary mapping each player to a buffer containing the data to replicate to them.
+	function(): {[Player]: buffer}
 		return __ end
 )
 
@@ -152,8 +150,8 @@ exposed.server.GetRecipients = implementation.GetRecipients :: typeof(
 -- client
 
 exposed.client.DataReceived = implementation.DataReceived :: typeof(
-	-- Should be provided the dictionary of replicated changes the server sends.
-	function(modifications: {[number]: buffer}) 
+	-- Should be provided the buffer of replicated changes the server sends.
+	function(b: buffer) 
 		return __ end
 )
 
@@ -482,9 +480,9 @@ do
 						if val == _nilvalue then
 							bit1array[idx] = true
 							bit2array[idx] = true
-						elseif val then
+						elseif val == true then
 							bit1array[idx] = true
-						else
+						elseif val == false then 
 							bit2array[idx] = true
 						end
 					end
@@ -755,7 +753,7 @@ do
 	
 	local ReplicateBufferRegion = exposed.server.ReplicateBufferRegion
 	
-	exposed.Buffer = (if isServer then setmetatable({}, {
+	exposed.buffer = (if isServer then setmetatable({}, {
 		__index = function(self, key): any
 			local builtinfunc: (buffer, ...any) -> any = (buffer :: anyTable)[key]
 			

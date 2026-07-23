@@ -17,6 +17,7 @@ local bufferSerdes = Squish.buffer()
 local setpos, getpos = Squish.util.setpos, Squish.util.getpos
 
 local anyTableSerdes = Constants.anyTableSerdes
+local dataSerdes = Constants.DataSerdes
 local Schemas = Constants.Schemas
 
 local __: any = nil
@@ -74,9 +75,11 @@ local function warn(text: string)
 end
 
 
--- Should be provided the dictionary of replicated changes the server sends.
-function exposed.DataReceived(modifications: {[number]: buffer})
+-- Should be provided the buffer of replicated changes the server sends.
+function exposed.DataReceived(b: buffer)
 	log("|:| SYNCEE -> DATA RECEIVED")
+
+	local modifications = dataSerdes.des(Squish.frombuffer(b))
 	
 	-- handle special maps
 	-- [0] = deletions

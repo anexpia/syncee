@@ -13,9 +13,10 @@ local vlq = Squish.vlq()
 local u8, vlqser = Squish.u8(), vlq.ser
 
 local anyTableSerdes = Constants.anyTableSerdes
+local dataSerdes = Constants.DataSerdes
 local idArraySerdes = Squish.array(vlq)
 
-local tryrealloc, pushbuf, pushstr = Squish.util.tryrealloc, Squish.util.pushbuf, Squish.util.pushstr
+local tryrealloc, pushbuf, pushstr, setpos = Squish.util.tryrealloc, Squish.util.pushbuf, Squish.util.pushstr, squish.util.setpos
 
 local Schemas = Constants.Schemas
 
@@ -124,10 +125,13 @@ local function assignsyncdata(t: anyTable | buffer): (syncdata)
 		syncdatastorage[t] = newdata
 
 		local private = storage[t :: any]
-		if private and private.proxy then syncdatastorage[private.proxy] = newdata end 
+		if private then
+			node.persistent = private.persistent
+			if private.proxy then syncdatastorage[private.proxy] = newdata end 
+		end
 
 		if type(t) == 'table' then
-			for k, v in next, t :: any do 
+			for k, v in t :: any do 
 				local vtype = type(v)
 				
 				if vtype == "table" or vtype == "buffer" then
@@ -642,8 +646,8 @@ do
 		table.insert(removed, data.id)
 	end
 
-	-- =Returns a dictionary mapping each player to an array of buffers containing new data to replicate.
-	function exposed.GetDataToReplicate(): {[Player]: {[number]: buffer}}
+	-- Returns a dictionary mapping each player to a buffer containing the data to replicate to them.
+	function exposed.GetDataToReplicate(): {[Player]: buffer}
 		
 		local now = tick()
 		
@@ -827,7 +831,15 @@ do
 		
 		-- return result
 		
-		local toreturn = table.clone(replicationmaps)
+		local toreturn = {}
+		local cursor = Squish.cursor()
+
+		for player, map in replicationmaps do 
+			dataSerdes.ser(cursor, map)
+			toreturn[player] = Squish.tobuffer(cursor)
+			setpos(cursor, 0)
+		end
+
 		table.clear(replicationmaps)
 		
 		return toreturn
