@@ -1,0 +1,13 @@
+.vscode/**
+
+node_modules
+build
+
+selene.toml
+sourcemap.json
+package.json
+package-lock.json
+
+.pesde
+luau_packages
+lune_packages
