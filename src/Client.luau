@@ -76,7 +76,7 @@ end
 
 -- Should be provided the dictionary of replicated changes the server sends.
 function exposed.DataReceived(modifications: {[number]: buffer})
-	log("|:| SYNCTABLE -> DATA RECEIVED")
+	log("|:| SYNCEE -> DATA RECEIVED")
 	
 	-- handle special maps
 	-- [0] = deletions
@@ -271,7 +271,7 @@ function exposed.DataReceived(modifications: {[number]: buffer})
 		AwaitDataSignal = __
 	end
 	
-	log("|:| SYNCTABLE -> DONE")
+	log("|:| SYNCEE -> DONE")
 end
 
 -- Waits for the root replication table of the client to be received from server.

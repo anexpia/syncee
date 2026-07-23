@@ -56,6 +56,7 @@ type privatedata = {
 	persistent: boolean?,
 	ratelimit: number?,
 	schemaidx: number?,
+	proxy: anyTable?,
 }
 
 --
@@ -73,6 +74,7 @@ local pendingreplication: {syncdata} = {}
 local ratelimitedarray: {syncdata} = {}
 local replicationmaps: {[Player]: anyTable} = {}
 
+local proxymap = setmetatable({}, ksweaktable) :: {[anyTable]: anyTable}
 
 --
 
@@ -104,6 +106,8 @@ local function assignsyncdata(t: anyTable | buffer): (syncdata)
 	local syncdata = syncdatastorage[t]
 	
 	if not syncdata then
+		t = proxymap[t :: anyTable] or t 
+
 		local id = claimid()
 		local node = NodeCreator.create(t)
 		
@@ -118,7 +122,10 @@ local function assignsyncdata(t: anyTable | buffer): (syncdata)
 		
 		idtovalue[id] = t
 		syncdatastorage[t] = newdata
-		
+
+		local private = storage[t :: any]
+		if private and private.proxy then syncdatastorage[private.proxy] = newdata end 
+
 		if type(t) == 'table' then
 			for k, v in next, t :: any do 
 				local vtype = type(v)
@@ -169,7 +176,7 @@ end
 --
 
 -- Sets whether the provided table or buffer is persistent in syncdata even if not replicated to anyone.
--- This should be used for tables you know are guaranteed to be replicated. so that you have a safety guarantee that SyncTable's api wont error on it.
+-- This should be used for tables you know are guaranteed to be replicated. so that you have a safety guarantee that Syncee's api wont error on it.
 function exposed.SetPersistent(t: anyTable | buffer, state: boolean)
 	state = not not state 
 	
@@ -195,7 +202,7 @@ function exposed.SetPersistent(t: anyTable | buffer, state: boolean)
 end
 
 -- Registers the provided schema to be used for the given table, nil can be provided to remove the schema.
--- This doesn't need the value to be already in synctable's regisstry.
+-- This doesn't need the value to be already in syncee's registry.
 function exposed.SetSchema(t: anyTable, schema: (number | string)?)
 	local typ = type(t)
 	assert(typ == "table", `Expected a table, got {typeof(t)}`)
@@ -213,7 +220,7 @@ function exposed.SetSchema(t: anyTable, schema: (number | string)?)
 end
 
 -- Limits the rate of replication for the provided table to atleast 'n' seconds between each replication.
--- This doesn't need the value to be already in synctable's registry. 
+-- This doesn't need the value to be already in syncee's registry. 
 -- -
 -- Note that this only applies to the provided table/buffer.
 function exposed.SetRatelimit(t: anyTable | buffer, ratelimit: number?)
@@ -239,7 +246,7 @@ function exposed.Replicate(t: anyTable, key: any)
 		end
 	end
 
-	local value = rawget(t, key) :: any
+	local value = rawget(syncdata.t :: anyTable, key) :: any
 	local rv = value
 	
 	local t_new = type(value)
@@ -267,10 +274,13 @@ end
 
 -- Sets 'key' of 't' to 'value', replicates the change then fires TableChangedSignal if present.
 function exposed.Set(t: anyTable, key: any, value: any)
+	t = proxymap[t] or t 
+
 	local old = rawget(t, key)
 	if old == value then return end 
 
 	rawset(t, key, value)
+
 	local syncdata = syncdatastorage[t]
 
 	if syncdata then
@@ -297,12 +307,14 @@ function exposed.Set(t: anyTable, key: any, value: any)
 
 		local signal = syncdata.changesignal
 		if signal then signal:Fire(t, key, value) end
+	else 
+		t[key] = value
 	end
 end
 
 -- Returns the root replication table of the provided player.
 function exposed.GetData(player: Player)
-	assertPlayer(player, "calling SyncTable.GetData()")
+	assertPlayer(player, "calling Syncee.server.GetData()")
 	if playerdata[player] then return playerdata[player] end 
 
 	local t = {}
@@ -319,6 +331,7 @@ end
 -- Clears the content of the table and schedules the clearing for replication.
 function exposed.Clear(t: anyTable)
 	assert(type(t) == "table", `Expected to be provided a table, got {typeof(t)}.`)
+	t = proxymap[t] or t
 	local syncdata = syncdatastorage[t]
 	
 	if syncdata then
@@ -336,6 +349,8 @@ end
 
 -- table.insert(), but replicates the changes if on server and fires change signal.
 function exposed.Insert(t: anyTable, posOrValue: any, value: any?)	
+	t = proxymap[t] or t 
+
 	if value == nil then
 		exposed.Set(t, #t + 1, posOrValue)
 	else
@@ -348,6 +363,8 @@ end
 
 -- table.remove(), but replicates the changes if on server and fires change signal.
 function exposed.Remove(t: anyTable, pos: number?)
+	t = proxymap[t] or t 
+
 	pos = pos or #t
 
 	local old = t[pos]
@@ -356,6 +373,31 @@ function exposed.Remove(t: anyTable, pos: number?)
 	exposed.Set(t, #t, nil)
 
 	return old
+end
+
+-- Returns the players this table/buffer is replicated to.
+function exposed.GetRecipients(t: anyTable | buffer): {Player}
+	local recipients = {}
+	local count = 0
+
+	local syncdata = syncdatastorage[t]
+	if syncdata then
+		local node = syncdata.node
+		if node.awaitingupdate then node:updateorigins() end 
+
+		if not syncdata.destroyed then 
+			for origin, state in node.origins do 
+				local player = origin.player
+				
+				if player then
+					count += 1 
+					recipients[count] = player
+				end
+			end
+		end
+	end 
+
+	return recipients
 end
 
 -- Returns the table or buffer associated with the provided id if present.
@@ -400,10 +442,6 @@ end
 -- proxies
 
 do 
-	-- reference to proxy keeps original alive, reference to original does not keep proxy alive.
-	local proxymap = setmetatable({}, ksweaktable) :: {[anyTable]: anyTable}
-	local toProxy = setmetatable({}, vsweaktable) :: {[anyTable]: anyTable}
-	
 	local set = exposed.Set
 	local proxy_mtbl = {
 		__index = function(proxy: anyTable, key: any)
@@ -427,19 +465,27 @@ do
 		end,
 	}
 	
-	-- Returns a proxy for the provided table that automatically runs SyncTable.set() upon any changes.
+	-- Returns a proxy for the provided table that automatically runs Syncee.server.set() upon any changes.
 	function exposed.GetProxy(t: anyTable): anyTable
-		local proxy = toProxy[t]
+		local private = storage[t]
+
+		if private then
+			local proxy = private.proxy
+			if proxy then return proxy end
+		end
 		
-		if proxy then return proxy end
-		if proxymap[t] then return t end
-		
-		proxy = table.freeze(setmetatable({}, proxy_mtbl)) :: any
+		local proxy = table.freeze(setmetatable({}, proxy_mtbl)) :: any
 		
 		proxymap[proxy] = t 
-		toProxy[t] = proxy
-		
-		return proxy
+		if private then private.proxy = proxy
+		else private = {proxy = proxy} :: privatedata; storage[t] = private end
+
+		setmetatable(private, vsweaktable) -- so proxies dont leak.
+
+		syncdatastorage[proxy] = syncdatastorage[t]
+		storage[proxy] = private
+
+ 		return proxy
 	end
 	
 	-- Returns the original table that this proxy is bound to, if it exists.

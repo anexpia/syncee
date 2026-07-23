@@ -62,21 +62,21 @@ exposed.serdes = {
 
 exposed.server.SetPersistent = implementation.SetPersistent :: typeof(
 	-- Sets whether the provided table or buffer is persistent in syncdata even if not replicated to anyone.
-	-- This should be used for tables you know are guaranteed to be replicated. so that you have a safety guarantee that SyncTable's api wont error on it.
+	-- This should be used for tables you know are guaranteed to be replicated. so that you have a safety guarantee that Syncee's api wont error on it.
 	function(t: anyTable | buffer, state: boolean) 
 		return __ end
 )
 
 exposed.server.SetSchema = implementation.SetSchema :: typeof(
 	-- Registers the provided schema to be used for the given table, nil can be provided to remove the schema.
-	-- This doesn't need the value to be already in SyncTable's registry.
+	-- This doesn't need the value to be already in Syncee's registry.
 	function(t: anyTable, schema_idx: number | string) 
 		return __ end
 )
 
 exposed.server.SetRatelimit = implementation.SetRatelimit :: typeof(
 	-- Limits the rate of replication for the provided table to atleast 'n' seconds between each replication.
-	-- This doesn't need the value to be already in synctable's registry. 
+	-- This doesn't need the value to be already in syncee's registry. 
 	-- -
 	-- Note that this only applies to the provided table/buffer.
 	function(t: anyTable | buffer, ratelimit: number?) 
@@ -102,7 +102,7 @@ exposed.server.Set = implementation.Set :: typeof(
 )
 
 exposed.server.GetDataToReplicate = implementation.GetDataToReplicate :: typeof(
-	-- <strong>SERVER ONLY </strong>- Returns a dictionary mapping each player to an array of buffers containing new data to replicate.
+	-- Returns a dictionary mapping each player to an array of buffers containing new data to replicate.
 	function(): {[Player]: {[number]: buffer}}
 		return __ end
 )
@@ -114,7 +114,7 @@ exposed.server.MarkPlayerLoaded = implementation.MarkPlayerLoaded :: typeof(
 )
 
 exposed.server.GetProxy = implementation.GetProxy :: typeof(
-	-- Returns a proxy for the provided table that automatically runs SyncTable.set() upon any changes.
+	-- Returns a proxy for the provided table that automatically runs Syncee.server.set() upon any changes.
 	function(t: anyTable): anyTable
 		return __ end
 )
@@ -140,6 +140,12 @@ exposed.server.Insert = implementation.Insert :: typeof(
 exposed.server.Remove = implementation.Remove :: typeof(
 	-- table.remove(), but replicates the changes if on server and fires change signal.
 	function(t: anyTable, posOrValue: any, value: any?): ()
+		return __ end
+)
+
+exposed.server.GetRecipients = implementation.GetRecipients :: typeof(
+	-- Returns the players this table/buffer is replicated to.
+	function(t: anyTable | buffer): {Player}
 		return __ end
 )
 
@@ -695,18 +701,18 @@ do
 			
 		elseif name == "record" then
 			return deltarecord(serdes.structure)
-		else error("unsupported table serdes", 0) end
+		else return serdes end
 	end
 		
 	-- Registers a table schema for use in serializing replicated tables and returns the id of the schema.
 	-- Same schemas should be registered on both server and client. Schemas are identified by name so order doesn't matter.
 	-- -
-	-- <strong>Do not use Squish.any(), Squish.buffer(), or any table serdes (array, map, ...) as a sub-serdes, SyncTable.serdes.any/anytable/table/buffer should be used instead.</strong>
+	-- <strong>Do not use Squish.any(), Squish.buffer(), or any table serdes (array, map, ...) as a sub-serdes, Syncee.serdes.any/anytable/table/buffer should be used instead.</strong>
 	-- -
-	-- example: <code>Squish.array(SyncTable.serdes.table)</code>
+	-- example: <code>Squish.array(Syncee.serdes.table)</code>
 	function exposed.RegisterSchema(name: string, serdes: Squish.SerDes<anyTable>): number?
-		Squish.validation.assertIsSerdes(serdes, 2, "SyncTable.RegisterSchema()")
-		Squish.validation.assertSerdesType(serdes, "table", 2, "SyncTable.RegisterSchema()")
+		Squish.validation.assertIsSerdes(serdes, 2, "Syncee.RegisterSchema()")
+		Squish.validation.assertSerdesType(serdes, "table", 2, "Syncee.RegisterSchema()")
 		
 		serdes = deltaify(serdes)
 		

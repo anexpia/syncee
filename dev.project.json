@@ -1,9 +1,9 @@
 {
-  "name": "SyncTable",
+  "name": "syncee",
   "tree": {
     "$className": "DataModel",
     "ReplicatedStorage": {
-      "SyncTable": {
+      "syncee": {
         "$path": "src"
       },
       "luau_packages": {
