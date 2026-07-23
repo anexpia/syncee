@@ -16,14 +16,14 @@ frktest = [{ name = "itsfrank/frktest", version = "^0.0.4", index = "https://git
 luau-lsp = [{ name = "pesde/luau_lsp", version = "=1.66.1", index = "https://github.com/pesde-pkg/index", target = "lune" }, "dev"]
 stylua = [{ name = "pesde/stylua", version = "=2.4.1", index = "https://github.com/pesde-pkg/index", target = "lune" }, "dev"]
 
-[graph."anexpia/squish@6.0.1 luau"]
-direct = ["squish", { name = "anexpia/squish", version = "^6.0.1", index = "default", target = "luau" }, "standard"]
+[graph."anexpia/squish@6.0.1 roblox"]
+direct = ["squish", { name = "anexpia/squish", version = "^6.0.1", index = "default", target = "roblox" }, "standard"]
 
-[graph."anexpia/squish@6.0.1 luau".pkg_ref]
+[graph."anexpia/squish@6.0.1 roblox".pkg_ref]
 ref_ty = "pesde"
 index_url = "https://github.com/pesde-pkg/index"
 
-[graph."anexpia/squish@6.0.1 luau".pkg_ref.dependencies]
+[graph."anexpia/squish@6.0.1 roblox".pkg_ref.dependencies]
 rojo = [{ name = "pesde/rojo", version = "^7.5.1", index = "https://github.com/pesde-pkg/index", target = "lune" }, "dev"]
 scripts = [{ name = "pesde/scripts_rojo", version = "^0.2.0", index = "https://github.com/pesde-pkg/index", target = "lune" }, "dev"]
 

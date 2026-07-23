@@ -3,7 +3,7 @@
 
 local RunService = game:GetService("RunService")
 
-local Squish = require("./luau_packages/squish")
+local Squish = require("./roblox_packages/squish")
 
 local implementation = (if RunService:IsServer() then require("@self/Server") else require("@self/Client")) :: any
 local Constants = require("@self/Constants") 

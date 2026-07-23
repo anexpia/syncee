@@ -16,6 +16,8 @@ For usage guide and API reference, check the **[documentation](https://anexpia.g
 ## Installation
 
 - **Manual**: **[releases](https://github.com/anexpia/syncee/releases)**
+You'll need to add **Squish** manually too and add it in the same folder as **Syncee**.
+
 - **Pesde**:
 ```bash
 pesde add anexpia/syncee

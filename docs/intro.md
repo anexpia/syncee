@@ -19,6 +19,8 @@ sidebar_position: 1
 ## Installation
 
 ### Manual: [releases](https://github.com/anexpia/syncee/releases)
+You'll need to add **Squish** manually too and add it in the same folder as **Syncee**.
+
 ### Pesde:
 ```bash
 pesde add anexpia/syncee

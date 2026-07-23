@@ -4,7 +4,7 @@
 local LogService = game:GetService("LogService")
 local RS = game:GetService("RunService")
 
-local Squish = require("../luau_packages/squish")
+local Squish = require("../roblox_packages/squish")
 local CreateSignal = require("./Signal")
 
 local Constants = require("./Constants")

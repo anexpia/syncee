@@ -1,10 +1,21 @@
 name = "anexpia/syncee"
 version = "1.0.0"
+description = "A data replication library for easy & flexible server to client replication."
 authors = ["anexpia"]
+repository = "https://github.com/anexpia/syncee"
 license = "MIT"
+
+includes = [
+  "pesde.toml",
+  "README.md",
+  "LICENSE",
+  "src/*"
+]
 
 [target]
 environment = "roblox"
+lib = "src/init.luau"
+build_files = ["src"]
 
 [indices]
 default = "https://github.com/pesde-pkg/index"
@@ -22,4 +33,4 @@ pesde = "^0.7.0"
 lune = "^0.10.2"
 
 [dependencies]
-squish = { name = "anexpia/squish", version = "^6.0.1", target = "luau" }
+squish = { name = "anexpia/squish", version = "^6.0.1", target = "roblox" }

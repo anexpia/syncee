@@ -1,7 +1,7 @@
 --!optimize 2
 --!strict
 
-local Squish = require("../luau_packages/squish")
+local Squish = require("../roblox_packages/squish")
 local CreateSignal = require("./Signal")
 local NodeCreator = require("./CreateNode")
 
@@ -16,7 +16,7 @@ local anyTableSerdes = Constants.anyTableSerdes
 local dataSerdes = Constants.DataSerdes
 local idArraySerdes = Squish.array(vlq)
 
-local tryrealloc, pushbuf, pushstr, setpos = Squish.util.tryrealloc, Squish.util.pushbuf, Squish.util.pushstr, squish.util.setpos
+local tryrealloc, pushbuf, pushstr, setpos = Squish.util.tryrealloc, Squish.util.pushbuf, Squish.util.pushstr, Squish.util.setpos
 
 local Schemas = Constants.Schemas
 
