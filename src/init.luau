@@ -112,7 +112,7 @@ exposed.server.MarkPlayerLoaded = implementation.MarkPlayerLoaded :: typeof(
 )
 
 exposed.server.GetProxy = implementation.GetProxy :: typeof(
-	-- Returns a proxy for the provided table that automatically runs Syncee.server.set() upon any changes.
+	-- Returns a proxy for the provided table that automatically runs Syncee.server.Set() upon any changes.
 	function(t: anyTable): anyTable
 		return __ end
 )

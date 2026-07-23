@@ -1,0 +1,193 @@
+:root, [data-theme='dark'] {
+  /* main */
+  --ifm-color-primary: #b4aae2;
+  --ifm-color-primary-dark: #8f86bb;
+  --ifm-color-primary-darker: #6d6495;
+  --ifm-color-primary-darkest: #3d3755;
+  --ifm-color-primary-light: #d2cbee;
+
+  --ifm-color-error: #df88ab;
+
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+
+  --ifm-background-color: #1a1a1a;
+
+  /* navbar */
+  --ifm-navbar-background-color: #232323;
+  --ifm-navbar-link-color: var(--ifm-color-primary-light);
+  --ifm-navbar-link-hover-color: var(--ifm-color-primary-dark);
+
+  /* footer */
+  --ifm-footer-color: var(--ifm-color-primary-light);
+  --ifm-footer-link-color: var(--ifm-color-primary-light);
+  --ifm-footer-link-hover-color: var(--ifm-color-primary);
+
+  /* search bar */
+  --markua-search-bg: #151515;
+  --markua-search-color: #e3e3e3;
+  --markua-search-border: #3d3755;
+  --markua-search-placeholder: #888;
+
+  /* markua tokens */
+  --markua-border-color: var(--ifm-color-primary-dark);
+  --markua-image-border: var(--ifm-color-primary-darkest);
+  --markua-caption-color: #999;
+}
+
+[data-theme='light'] {
+  /* main */
+  --ifm-color-primary: #6b53c1;
+  --ifm-color-primary-dark: #5b45a8;
+  --ifm-color-primary-darker: #4f3b95;
+  --ifm-color-primary-darkest: #38296e;
+  --ifm-color-primary-light: #806ad1;
+
+  --ifm-color-error: #c94c7a;
+
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.05);
+
+  --ifm-background-color: #f5f6f8;
+
+  /* navbar */
+  --ifm-navbar-background-color: #eef0f3;
+  --ifm-navbar-link-color: #38296e;
+  --ifm-navbar-link-hover-color: var(--ifm-color-primary);
+
+  /* footer */
+  --ifm-footer-color: #38296e;
+  --ifm-footer-link-color: #38296e;
+  --ifm-footer-link-hover-color: var(--ifm-color-primary);
+
+  /* search bar */
+  --markua-search-bg: #e2e4e9;
+  --markua-search-color: #1a1a1a;
+  --markua-search-border: #c4bcd8;
+  --markua-search-placeholder: #777;
+
+  /* markua tokens */
+  --markua-border-color: #d0c8e2;
+  --markua-image-border: #d0c8e2;
+  --markua-caption-color: #555;
+}
+
+/* navbar */
+
+.navbar {
+  border-bottom: 1px solid var(--markua-border-color);
+  box-shadow: none;
+}
+
+.navbar__logo {
+  height: 2.5rem;
+  width: auto;
+}
+
+.navbar__title {
+  display: none !important;
+}
+
+/* search bar */
+
+.navbar__search-input,
+input[class*='navbar__search-input'] {
+  background-color: var(--markua-search-bg) !important;
+  color: var(--markua-search-color) !important;
+  border: 1px solid var(--markua-search-border) !important;
+}
+
+.navbar__search-input::placeholder,
+input[class*='navbar__search-input']::placeholder {
+  color: var(--markua-search-placeholder) !important;
+}
+
+.navbar__search-input:focus,
+input[class*='navbar__search-input']:focus {
+  border-color: var(--ifm-color-primary) !important;
+  outline: none;
+}
+
+/* footer */
+
+[data-theme='light'] .footer--dark {
+  --ifm-footer-color: #38296e;
+  --ifm-footer-link-color: #38296e;
+  --ifm-footer-link-hover-color: var(--ifm-color-primary);
+}
+
+.footer {
+  background-color: var(--ifm-navbar-background-color);
+  border-top: 1px solid var(--markua-border-color);
+  padding: 1.5rem;
+}
+
+.footer__copyright {
+  font-size: 0.8rem;
+  opacity: 0.6;
+  color: var(--ifm-footer-color) !important;
+}
+
+.footer__title {
+  color: var(--ifm-footer-color) !important;
+}
+
+a.footer__link-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ifm-footer-link-color) !important;
+  text-decoration: none;
+}
+
+a.footer__link-item:hover {
+  color: var(--ifm-footer-link-hover-color) !important;
+  text-decoration: underline;
+}
+
+div.footer__link-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ifm-footer-color) !important;
+}
+
+/* hacks because im bad at this */
+.pagination-nav {
+  display: none !important;
+}
+
+.theme-doc-markdown {
+  max-width: 100% !important;
+  margin: 0 auto;
+}
+
+/* other */
+
+.basicimagestyle {
+  width: 100%;
+  border-radius: 8px;
+  border: 2px solid var(--markua-image-border);
+}
+
+.basicimagestyle:hover {
+  border-color: var(--ifm-color-primary);
+}
+
+.baseimagecaption {
+  font-size: 0.9rem;
+  margin-top: 0.3rem;
+  color: var(--markua-caption-color);
+  text-align: center;
+}
+
+.separatorline {
+  border-bottom: 2px solid var(--ifm-color-primary);
+  width: 100%;
+  margin: 1.5rem auto;
+}
+
+/* home page title */
+.hero__title {
+  color: var(--ifm-color-primary) !important;
+}

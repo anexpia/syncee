@@ -1,0 +1,48 @@
+title = "Syncee"
+gitRepoUrl = "https://github.com/anexpia/syncee"
+gitSourceBranch = "main"
+changelog = false
+
+classOrder = [
+    "Syncee",
+    "server",
+    "client",
+    "serdes"
+]
+
+[home]
+enabled = false
+includeReadme = false
+
+[docusaurus]
+onBrokenLinks = "throw"
+onBrokenMarkdownLinks = "warn"
+favicon = "img/favicon.ico"
+
+organizationName = "anexpia"
+projectName = "syncee"
+url = "https://anexpia.github.io"
+baseUrl = "/syncee/"
+tagline = "A high-performance schema-driven table and buffer delta replication library for Roblox."
+
+stylesheets = [
+    { href = "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css", type = "text/css" }
+]
+
+[navbar]
+title = ""
+
+[navbar.logo]
+alt = "Site Logo"
+src = "img/syncee.png"
+
+[footer]
+style = "dark"
+copyright = "Copyright © 2026 Anexpia. Built with Moonwave and Docusaurus."
+
+[[footer.links]]
+title = "Social"
+items = [
+    { html = '<a href="https://github.com/anexpia/syncee" target="_blank" rel="noopener noreferrer" class="footer__link-item"><i class="fa-brands fa-github"></i> GitHub</a>' },
+    { html = '<div class="footer__link-item" style="cursor: default;"><i class="fa-brands fa-discord"></i> Discord: @anexpia</div>' }
+]
