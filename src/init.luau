@@ -182,9 +182,9 @@ exposed.GetIdOfValue = implementation.GetIdOfValue :: typeof(
 		return __ end
 )
 
-exposed.IsReplicatedTable = implementation.IsReplicatedTable :: typeof(
-	-- Returns boolean indicating if the table is replicated.
-	function(t: anyTable): boolean 
+exposed.IsReplicatedValue = implementation.IsReplicatedValue :: typeof(
+	-- Returns boolean indicating if the table or buffer is replicated.
+	function(t: anyTable | buffer): boolean 
 		return __ end
 )
 

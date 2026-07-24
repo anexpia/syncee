@@ -417,8 +417,8 @@ function exposed.GetIdOfValue(t: anyTable | buffer): number?
 	return nil
 end
 
--- Returns boolean indicating if the table is replicated.
-function exposed.IsReplicatedTable(t: anyTable | buffer): boolean
+-- Returns boolean indicating if the table or buffer is replicated.
+function exposed.IsReplicatedValue(t: anyTable | buffer): boolean
 	return not not syncdatastorage[t]
 end
 

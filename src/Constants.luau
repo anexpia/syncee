@@ -1,7 +1,7 @@
 --!optimize 2
 --!strict
 
-local Squish = require("../luau_packages/squish")
+local Squish = require("../roblox_packages/squish")
 local CreateSignal = require("./Signal")
 
 local __: any = nil

@@ -48,7 +48,7 @@
 --- @return number?
 --- Returns id associated with the table or buffer if present.
 
---- @function IsReplicatedTable
+--- @function IsReplicatedValue
 --- @within Syncee
 --- @param t table | buffer
 --- @return boolean

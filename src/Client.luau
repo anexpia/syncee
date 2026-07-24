@@ -297,8 +297,8 @@ function exposed.GetIdOfValue(t: anyTable | buffer): number?
 	return valuetoid[t]
 end
 
--- Returns boolean indicating if the table is replicated.
-function exposed.IsReplicatedTable(t: anyTable): boolean
+-- Returns boolean indicating if the table or buffer is replicated.
+function exposed.IsReplicatedValue(t: anyTable | buffer): boolean
 	return not not valuetoid[t]
 end
 
