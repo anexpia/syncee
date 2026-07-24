@@ -69,7 +69,7 @@
 --- @prop buffer typeof(buffer)
 --- @within Syncee
 --- Wrapper table for the `buffer` library that automatically handles replication for buffers on the server\
---- You shouldn't use this unless you don't care about performance. Using [`ReplicateBufferRegion`](../api/server#ReplicateBufferRegion) is better.
+--- It exists for convenience. Using [`ReplicateBufferRegion`](../api/server#ReplicateBufferRegion) is better as it lets you define the region to replicate rather than doing it per-write.
 
 --------------------------------------------------------------------------------
 -- 2. SERVER NAMESPACE

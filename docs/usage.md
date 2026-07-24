@@ -159,7 +159,6 @@ local Squish = require(path.to.squish)
 
 local TableRef = Syncee.serdes.table
 
--- Register schemas on BOTH server and client before replicating
 Syncee.RegisterSchema("Item", Squish.record({
     Name = Squish.string(),
     Level = Squish.u16(),
