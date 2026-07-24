@@ -4,9 +4,7 @@ version = "1.0.0"
 registry = "https://github.com/UpliftGames/wally-index"
 licence = "MIT"
 
-description = "A high-performance, flexible, optionally schema-driven one-way data replication library for Roblox."
-
-realm = "shared"
+description = "A data replication library for easy & flexible server to client replication."
 
 # exclude = ["**"]
 # include = [
