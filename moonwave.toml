@@ -11,7 +11,7 @@ classOrder = [
 ]
 
 [home]
-enabled = false
+enabled = true
 includeReadme = false
 
 [docusaurus]
