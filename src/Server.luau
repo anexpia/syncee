@@ -57,6 +57,11 @@ type privatedata = {
 	persistent: boolean?,
 	ratelimit: number?,
 	schemaidx: number?,
+
+	hassubschemas: boolean?,
+	subschemas: {[any]: number}?,
+	subschemaid: number?,
+
 	proxy: anyTable?,
 }
 
@@ -103,6 +108,30 @@ local function addreplicator(syncdata: syncdata): anyTable
 	return syncdata.replicator :: anyTable
 end
 
+local function applySubschemaIfNeeded(childTable: anyTable, key: any, subschemas: {[any]: number}?, subschemaid: number?)
+	local childprivate = storage[childTable]
+	if childprivate and childprivate.schemaidx then return end
+	
+	local schemaid: number? = nil
+
+	if subschemas then schemaid = subschemas[key]
+	else schemaid = subschemaid end
+	
+	if not schemaid then return end
+	exposed.SetSchema(childTable, schemaid)
+end
+
+local function propagateSubschemas(t: anyTable, private: privatedata)
+	local subschemas = private.subschemas
+	local subschemaid = private.subschemaid
+
+	for k, v in t do
+		if type(v) == "table" then
+			applySubschemaIfNeeded(v, k, subschemas, subschemaid)
+		end
+	end
+end
+
 local function assignsyncdata(t: anyTable | buffer): (syncdata)
 	local syncdata = syncdatastorage[t]
 	
@@ -125,18 +154,31 @@ local function assignsyncdata(t: anyTable | buffer): (syncdata)
 		syncdatastorage[t] = newdata
 
 		local private = storage[t :: any]
+		local subschemas, subschemaid 
+
 		if private then
 			node.persistent = private.persistent
 			if private.proxy then syncdatastorage[private.proxy] = newdata end 
+
+			subschemas = private.subschemas
+			subschemaid = private.subschemaid
 		end
+
+		local hassubschemas = subschemas or subschemaid
 
 		if type(t) == 'table' then
 			for k, v in t :: any do 
 				local vtype = type(v)
 				
-				if vtype == "table" or vtype == "buffer" then
+				local istable = vtype == "table"
+
+				if istable or vtype == "buffer" then
 					local othersyncdata = assignsyncdata(v)
 					node:connect(othersyncdata.node, k)
+
+					if istable and hassubschemas then
+						applySubschemaIfNeeded(v :: anyTable, k, subschemas, subschemaid)
+					end
 				end
 			end 
 		end
@@ -157,12 +199,6 @@ local function assignprivatedata(t: anyTable | buffer): privatedata
 	return data
 end
 
-local function assertRegistered(t: unknown): syncdata
-	local typ = type(t)
-	assert(typ == 'table' or typ == 'buffer', `Expected a table or buffer, got {typeof(t)}`)
-	return assert(syncdatastorage[t], 'Provided table/buffer is not a replicated table/buffer.')
-end
-
 local function assertRegisteredTable(t: unknown): syncdata
 	assert(type(t) == 'table', `Expected a table, got {typeof(t)}`)
 	return assert(syncdatastorage[t], 'Provided table is not a replicated table.')
@@ -174,7 +210,8 @@ local function assertRegisteredBuffer(t: unknown): syncdata
 end
 
 local function assertPlayer(v: unknown, context: string)
-	assert(typeof(v) == "Instance" and v:IsA("Player"), `Expected a player when {context}`)
+	local typ = typeof(v)
+	assert(typ == "Instance" and (v :: Instance):IsA("Player"), `Expected a player, got {if typ == "Instance" then (v :: Instance).ClassName else typ}`)
 end
 
 --
@@ -207,20 +244,39 @@ end
 
 -- Registers the provided schema to be used for the given table, nil can be provided to remove the schema.
 -- This doesn't need the value to be already in syncee's registry.
+-- If the schema has sub-schemas, they will be automatically applied to any table present within if they don't have a schema assigned already.
 function exposed.SetSchema(t: anyTable, schema: (number | string)?)
 	local typ = type(t)
 	assert(typ == "table", `Expected a table, got {typeof(t)}`)
 	
 	local schema_idx: number?
-	
+	local serdes 
+
 	if type(schema) == "string" then
 		schema_idx = Constants.SchemaNameToIdx[schema] :: number
 	else schema_idx = schema end
 	
-	if schema ~= nil then assert(Schemas[schema_idx :: number], `No schema is registered with the id/name {schema}.`) end
+	if schema ~= nil then serdes = assert(Schemas[schema_idx :: number], `No schema is registered with the id/name {schema}.`) end
 
 	local data = if schema_idx then assignprivatedata(t) else storage[t]
-	if data then data.schemaidx = schema_idx end
+	if data then
+		data.schemaidx = schema_idx
+		
+		if serdes then
+			local subschemas, subschemaidx = (serdes :: any).subschemas, (serdes :: any).subschemaIdx
+			local hassubschemas = not not (subschemas or subschemaidx)
+
+			data.subschemas = subschemas
+			data.subschemaid = subschemaidx
+			data.hassubschemas = hassubschemas
+
+			if hassubschemas and syncdatastorage[t] then propagateSubschemas(t, data) end
+		else
+			data.hassubschemas = false
+			data.subschemas = nil
+			data.subschemaid = nil
+		end
+	end
 end
 
 -- Limits the rate of replication for the provided table to atleast 'n' seconds between each replication.
@@ -239,7 +295,8 @@ end
 
 -- Replicates the value of the provided key, even if not changed.
 function exposed.Replicate(t: anyTable, key: any)
-	local syncdata = assertRegistered(t)
+	local syncdata = assertRegisteredTable(t)
+	local t = syncdata.t :: anyTable
 
 	for othernode, keys in syncdata.node.ascend do
 		if keys[key] then 
@@ -250,13 +307,23 @@ function exposed.Replicate(t: anyTable, key: any)
 		end
 	end
 
-	local value = rawget(syncdata.t :: anyTable, key) :: any
+	local value = rawget(t, key) :: any
 	local rv = value
 	
 	local t_new = type(value)
-	if t_new == "table" or t_new == "buffer" then
+	local newistable = t_new == "table"
+	
+	if newistable or t_new == "buffer" then
 		local othersyncdata = assignsyncdata(value)
 		syncdata.node:connect(othersyncdata.node, key)
+		
+		if newistable then
+			local private = storage[t]
+			
+			if private and private.hassubschemas then
+				applySubschemaIfNeeded(value, key, private.subschemas, private.subschemaid)
+			end
+		end
 	elseif value == nil then
 		rv = _nilvalue
 	end
@@ -299,10 +366,19 @@ function exposed.Set(t: anyTable, key: any, value: any)
 		end
 
 		local rv = value
-		if t_new == "table" or t_new == "buffer" then
+		local newistable = t_new == "table"
+		
+		if newistable or t_new == "buffer" then
 			local othersyncdata = assignsyncdata(value)
 			syncdata.node:connect(othersyncdata.node, key)
-			
+
+			if newistable then
+				local private = storage[t]
+
+				if private and private.hassubschemas then
+					applySubschemaIfNeeded(value, key, private.subschemas, private.subschemaid)
+				end
+			end
 		elseif value == nil then
 			rv = _nilvalue
 		end

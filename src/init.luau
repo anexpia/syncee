@@ -47,13 +47,16 @@ local exposed = {
 	client = {},
 }
 
+local defaultanySerdes = Squish.any()
+local tableref, bufref, anyserdes, anyTableSerdes = Constants.TableReferenceSerdes, Constants.BufferReferenceSerdes, Constants.anySerdes, Constants.anyTableSerdes
+
 exposed._constants = Constants
 exposed.serdes = {
-	table = Constants.TableReferenceSerdes,
-	buffer = Constants.BufferReferenceSerdes,
+	table = tableref,
+	buffer = bufref,
 	
-	any = Constants.anySerdes,
-	anytable = Constants.anyTableSerdes,
+	any = anyserdes,
+	anytable = anyTableSerdes,
 }
 
 -- server
@@ -232,28 +235,45 @@ function exposed.WaitForValue<T, K>(t: T, key: K & keyof<T>, timeout: number?): 
 	return result
 end
 
-local function processSchemaAttribute(name: string, idx: number)
-	Constants.SchemaNameToIdx[name] = idx
-
-	local pending = Constants.PendingSchemas[name] 
-	if pending then 
-		Constants.Schemas[idx] = pending 
-		Constants.PendingSchemas[name] = nil
-	end
-end
+local schemahashtoid: {[string]: number} = {}
 
 if not isServer then
-	for name, idx in script.Constants:GetAttributes() do
-		processSchemaAttribute(name, idx :: number)
+	local function processSchemaAttribute(attr: string, v: any)
+		local id = tonumber(attr)
+
+		if id and type(v) == "string" then
+			local pending = Constants.PendingSchemas[v] 
+			if pending then 
+				for _, name in pending.names do 
+					Constants.SchemaNameToIdx[name] = id
+				end
+
+				Constants.Schemas[id] = pending.serdes 
+				Constants.PendingSchemas[v] = nil
+			else 	
+				schemahashtoid[v] = id
+			end
+		end
 	end
 
-	script.Constants.AttributeChanged:Connect(function(name)
-		local idx = tonumber(script.Constants:GetAttribute(name))
-		if idx then processSchemaAttribute(name, idx) end
+	for attr, v in script.Constants:GetAttributes() do
+		processSchemaAttribute(attr, v)
+	end
+
+	script.Constants.AttributeChanged:Connect(function(attr)
+		local v = script.Constants:GetAttribute(attr)
+		processSchemaAttribute(attr, v)
 	end)
 end
 
 do 
+	local function unwrapSerdes(serdes: SerDes<any>): SerDes<any>
+		if serdes.name == "opt" then serdes = serdes.structure end
+		if serdes.name == "dedup" then serdes = serdes.structure end
+
+		return serdes
+	end 
+
 	-- array
 	-- essentially copy of squish.array() with extra bitarray.
 	
@@ -683,57 +703,160 @@ do
 		return result
 	end
 
-	local function deltaify(serdes: SerDes<any>): SerDes<any>
-		serdes = Squish.unopt(serdes)
-		
-		local name = serdes.name
-		if name == "array" then
-			return deltaarray(serdes.structure[1])
-			
-		elseif name == "map" then
-			local a, b = serdes.structure[1], serdes.structure[2]
-			return deltamap(a, b)
-			
-		elseif name == "table" then
-			return Squish.table(deltavalueserdes(serdes.structure))
-			
-		elseif name == "record" then
-			return deltarecord(serdes.structure)
-		else return serdes end
+	local function hashstring(str: string): string
+		local h1 = 5381
+		local h2 = 0x811c9dc5
+
+		for i = 1, #str do
+			local byte = string.byte(str, i)
+			h1 = bit32.band(h1 * 33 + byte, 0xFFFFFFFF)
+			h2 = bit32.band(bit32.bxor(h2, byte) * 16777619, 0xFFFFFFFF)
+		end
+
+		return string.pack("I4I4", h1, h2)
 	end
+
+	local function getSubName(parentName: string, childKey: any)
+		local prefix = if string.sub(parentName, 1, 2) == "__" then "" else "__"
+		return `{prefix}{parentName}_{childKey}`
+	end
+
+	local function processMonolithicSchema(name: string, serdes: SerDes<any>): SerDes<any>
+		local serdes = unwrapSerdes(serdes)
+
+		if serdes == anyTableSerdes then return serdes end
+		if serdes == tableref then error("Cannot use table reference as the schema for a table.", 0) end 
+
+		local subschemas: {[any]: number}? = nil
+		local subschemaIdx: number? = nil
+		local structure = serdes.structure
+		local sname = serdes.name
+
+		local deltaSerdes
+
+		if sname == "record" then
+			local newStructure: {[any]: SerDes<any>} = table.clone(structure)
+			subschemas = {}
+
+			for k, childSerdes in structure do
+				local unwrapped = unwrapSerdes(childSerdes)
+
+				if unwrapped.type == "buffer" then
+					newStructure[k] = bufref
+				elseif unwrapped == defaultanySerdes then
+					newStructure[k] = anyserdes 
+				elseif unwrapped.type == "table" and unwrapped ~= tableref and unwrapped ~= anyTableSerdes then
+					local childName = getSubName(name, k)
+					local childId = exposed.RegisterSchema(childName, unwrapped)
+
+					newStructure[k] = tableref
+					subschemas[k] = childId
+				end
+			end
+
+			deltaSerdes = deltarecord(newStructure)
+		elseif sname == "array" or sname == "table" then
+			local serdes = unwrapSerdes(if sname == "array" then structure[1] else structure)
+
+			if serdes.type == "buffer" then
+				serdes = bufref
+			elseif serdes == defaultanySerdes then
+				serdes = anyserdes 
+			elseif serdes.type == "table" and serdes ~= tableref and serdes ~= anyTableSerdes then
+				local childName = getSubName(name, "0")
+				local childId = exposed.RegisterSchema(childName, serdes)
+
+				serdes = tableref
+				subschemaIdx = childId
+			end
+			
+			deltaSerdes = if sname == "array" then deltaarray(serdes :: SerDes<any>) else Squish.table(deltavalueserdes(serdes))
+		elseif sname == "map" then
+			local keySerdes = structure[1]
+			local valSerdes = unwrapSerdes(structure[2])
+
+			-- for map we only care about value.
+
+			if valSerdes.type == "buffer" then
+				valSerdes = bufref
+			elseif valSerdes == defaultanySerdes then
+				valSerdes = anyserdes 
+			elseif valSerdes.type == "table" and valSerdes ~= tableref and valSerdes ~= anyTableSerdes then
+				local childName = getSubName(name, "0")
+				local childId = exposed.RegisterSchema(childName, valSerdes)
+
+				valSerdes = tableref
+				subschemaIdx = childId
+			end
+			
+			deltaSerdes = deltamap(keySerdes, valSerdes)
+		end
+
+		if subschemas and next(subschemas) ~= nil then
+			(deltaSerdes :: any).subschemas = subschemas
+		elseif subschemaIdx ~= nil then
+			(deltaSerdes :: any).subschemaIdx = subschemaIdx
+		end
+			
+		return deltaSerdes
+	end
+
+	local serdeslookup = setmetatable({}, {__mode = 'ks'})
 		
 	-- Registers a table schema for use in serializing replicated tables and returns the id of the schema.
 	-- Same schemas should be registered on both server and client. Schemas are identified by name so order doesn't matter.
-	-- -
-	-- <strong>Do not use Squish.any(), Squish.buffer(), or any table serdes (array, map, ...) as a sub-serdes, Syncee.serdes.any/anytable/table/buffer should be used instead.</strong>
-	-- -
-	-- example: <code>Squish.array(Syncee.serdes.table)</code>
 	function exposed.RegisterSchema(name: string, serdes: Squish.SerDes<anyTable>): number?
 		Squish.validation.assertIsSerdes(serdes, 2, "Syncee.RegisterSchema()")
 		Squish.validation.assertSerdesType(serdes, "table", 2, "Syncee.RegisterSchema()")
-		
-		serdes = deltaify(serdes)
-		
+
 		local id 
+		local hash = hashstring(name)
+
+		if Constants.SchemaNameToIdx[name] or Constants.PendingSchemas[hash] then
+			error(`Schema with name '{name}' is already registered.`, 0)
+		end
+
+		local lookupname = serdeslookup[serdes]
+		if lookupname then
+			local id = Constants.SchemaNameToIdx[lookupname]
+			if id then
+				Constants.SchemaNameToIdx[name] = id
+			else
+				-- client!
+				local lookuphash = hashstring(lookupname)	
+				table.insert(Constants.PendingSchemas[lookuphash].names, name)
+			end
+
+			return id
+		end
+		
+		local originalSerdes = serdes
+		serdes = processMonolithicSchema(name, originalSerdes)
 
 		if isServer then
-			local id = Constants.SchemaNameToIdx[name]
+			currentSchemaIdx += 1
+			id = currentSchemaIdx
 
-			if not id then
-				currentSchemaIdx += 1
-				id = currentSchemaIdx
-
-				Constants.SchemaNameToIdx[name] = id
-				script.Constants:SetAttribute(name, id)
-			end
+			Constants.SchemaNameToIdx[name] = id
+			script.Constants:SetAttribute(tostring(id), hash)
 
 			Constants.Schemas[id] = serdes
 		else
-			id = Constants.SchemaNameToIdx[name]
+			id = schemahashtoid[hash]
 
-			if id then Constants.Schemas[id] = serdes
-			else Constants.PendingSchemas[name] = serdes end -- cant really insert it until the server provides the id.
+			if id then
+				schemahashtoid[hash] = nil
+				Constants.SchemaNameToIdx[name] = id
+				Constants.Schemas[id] = serdes
+			else
+				Constants.PendingSchemas[hash] = {
+					names = {name},
+					serdes = serdes,
+				} :: any
+			end
 		end
+
+		serdeslookup[originalSerdes] = name
 
 		return id
 	end

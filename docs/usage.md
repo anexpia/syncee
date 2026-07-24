@@ -122,7 +122,36 @@ Ideally you should have only one copy of Squish existing in your project.
 
 Schemas should be defined on both client and server for the client to be able to deserialize them.
 
-Due to the complexity of determining what SerDes to use for sub-tables/buffers, it's recommended to register a schema per individual table that'll be replicated rather than a single monolithic schema. This is quite tedious to do but it'll achieve the best result.
+You can structure your schemas in two ways:
+
+#### Monolithic Schemas
+Define a single schema with sub-schemas for all the nested tables. Syncee will automatically extract sub-schemas for tables & buffers, replace them with reference serdes, and automatically apply the sub-schemas for the nested tables.
+
+```lua
+local Syncee = require(path.to.syncee)
+local Squish = require(path.to.squish)
+
+Syncee.RegisterSchema("PlayerData", Squish.record({
+    Coins = Squish.u32(),
+    Gems = Squish.u16(),
+    Items = Squish.array(Squish.record({
+        Name = Squish.string(),
+        Level = Squish.u16(),
+    })),
+    Settings = Squish.record({
+        Sensitivity = Squish.f32(),
+        Volume = Squish.f32(),
+    })
+}))
+```
+
+:::info
+If a table already has an schema applied, either through [`SetSchema`](../api/server#SetSchema) or because it was nested in a monolithic schema, it will not apply again through this method even if the subschema should be different.
+:::
+
+
+#### Manual Schema Applying
+Alternatively, you can register individual schemas for each table and use reference serdes (`Syncee.serdes.table` / `Syncee.serdes.buffer`) inside schemas, then manually call [`SetSchema`](../api/server#SetSchema) on each table.
 
 ```lua
 local Syncee = require(path.to.syncee)
@@ -149,11 +178,6 @@ Syncee.RegisterSchema("PlayerData", Squish.record({
 }))
 ```
 
-:::warning
-When defining sub-SerDes inside a schema, **do not** use `Squish.any()`, `Squish.buffer()`, or any of Squish's table SerDes directly. Use [Syncee.serdes.table](../api/serdes#table), [Syncee.serdes.buffer](../api/serdes#buffer), or [Syncee.serdes.any](../api/serdes#any).\
-Client will not be able to identify which tables are changed if this is not done.
-:::
-
 :::info
 Do note that while Syncee does use the schemas, it's not actually aware of how they're structured for performance reasons.\
 So if there's something not serialized by the schema inside a table, Syncee will still process it as if it is replicated.
@@ -166,11 +190,12 @@ Bind registered schemas to each table instance on the server using [`Syncee.serv
 local playerData = Syncee.GetData(player)
 local settingsTable = { Sensitivity = 1.0, Volume = 0.8 }
 
--- bind schemas to root and nested tables individually
+-- If you used a monolithic schema, you only need to apply it once and all the subtables will be given the sub-schemas.
 Syncee.server.SetSchema(playerData, "PlayerData")
-Syncee.server.SetSchema(settingsTable, "Settings")
-
 Syncee.server.Set(playerData, "Settings", settingsTable)
+
+-- Otherwise, you'll need to apply it to each table.
+Syncee.server.SetSchema(settingsTable, "Settings")
 ```
 
 ---

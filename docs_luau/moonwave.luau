@@ -12,15 +12,8 @@
 	@param name string
 	@param serdes Squish.SerDes<table>
 	@return number?
-	Registers a table schema for use in serializing replicated tables and returns the id of the schema.\
-	Same schemas should be registered on both server and client. Schemas are identified by name so order doesn't matter.\
-	\
-	**Do not use Squish.any(), Squish.buffer(), or any table serdes (array, map, ...) as a sub-serdes, Syncee.serdes.any/anytable/table/buffer should be used instead.**\
-	\
-	```lua
-	local serdes = Squish.array(Syncee.serdes.buffer)
-	local schemaidx = Syncee.RegisterSchema("bufferarray", serdes) 
-	```
+	Registers a table schema for use in serializing replicated tables and returns the id of the schema.
+	Same schemas should be registered on both server and client. Schemas are identified by name so order doesn't matter.
 ]=]
 
 --- @function GetSchemaId
@@ -103,6 +96,8 @@
 	@param schema (number | string)?
 	Registers the provided schema to be used for the given table, nil can be provided to remove the schema.\
 	This doesn't need the value to be already in Syncee's registry.
+
+	If the schema has sub-schemas, they will be automatically applied to any table present within if they don't have a schema assigned already.
 ]=]
 
 --[=[

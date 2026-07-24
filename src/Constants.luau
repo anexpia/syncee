@@ -57,7 +57,7 @@ local DataSerdes = Squish.map(Squish.vlq(), Squish.buffer())
 
 local Schemas: {Squish.SerDes<any>} = {[0] = anyTableSerdes}
 local SchemaNameToIdx: {[string]: number} = {default = 0}
-local PendingSchemas: {[string]: Squish.SerDes<any>} = {}
+local PendingSchemas: {[string]: {names: {string}, serdes: Squish.SerDes<any>}} = {}
 
 return {
 	nilvalue = _nilvalue,
