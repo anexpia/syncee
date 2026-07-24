@@ -1,5 +1,4 @@
 --- @class Syncee
---- Syncee is a high-performance, schema-driven delta replication system for Luau tables and buffers in Roblox.
 --- Listed API is shared between server and client. For server / client specific API, check their documentation.
 
 --------------------------------------------------------------------------------

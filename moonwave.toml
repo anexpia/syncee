@@ -23,8 +23,7 @@ organizationName = "anexpia"
 projectName = "syncee"
 url = "https://anexpia.github.io"
 baseUrl = "/syncee/"
-tagline = "A high-performance schema-driven table and buffer delta replication library for Roblox."
-
+tagline = "A data replication library for easy & flexible server to client replication."
 stylesheets = [
     { href = "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css", type = "text/css" }
 ]
