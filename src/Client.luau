@@ -28,7 +28,7 @@ type BufferChangeSignal = Constants.BufferChangeSignal
 
 local exposed = {}
 
-local debuggingEnabled = if true then RS:IsStudio() else false
+local debuggingEnabled = if false then RS:IsStudio() else false
 
 local AwaitDataSignal = CreateSignal( __ )
 local data: anyTable

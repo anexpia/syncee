@@ -18,4 +18,4 @@ realm = "shared"
 # ]
 
 [dependencies]
-squish = "anexpia/squish@6.0.1"
+squish = "anexpia/squish@6.0.2"
