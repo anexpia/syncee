@@ -1,5 +1,5 @@
 ---
-sidebar_position: 2
+sidebar_position: 3
 ---
 
 # Usage Guide
@@ -8,84 +8,27 @@ This covers the core APIs and features of **Syncee**.
 
 ---
 
-## 1. Setup
-
-Syncee requires a simple networking bridge between server and client using `RemoteEvent`s or whatever other way you have of transmitting data.
-
-To set up replication:
-* **Server**: Call [`Syncee.server.MarkPlayerLoaded`](../api/server#MarkPlayerLoaded) when a player is ready, and collect replication payloads via [`Syncee.server.GetDataToReplicate`](../api/server#GetDataToReplicate) in a loop (e.g. `RunService.Heartbeat`) then send each client's buffer to them.
-* **Client**: Pass incoming buffers directly to [`Syncee.client.DataReceived`](../api/client#DataReceived).
-
-### Server Setup Example
-```lua
-local Players = game:GetService("Players")
-local RS = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local Syncee = require(ReplicatedStorage.Packages.Syncee)
-local SyncEvent = ReplicatedStorage:WaitForChild("SyncEvent")
-
-Players.PlayerAdded:Connect(function(player)
-    local playerData = Syncee.GetData(player)
-    Syncee.server.Set(playerData, "Coins", 100)
-    Syncee.server.Set(playerData, "Inventory", { "Sword", "Shield" })
-end)
-
-SyncEvent.OnServerEvent:Connect(function(player)
-    -- mark player as loaded so Syncee replicates their root data table
-    -- you should wait until the player's client has loaded first. Having the client signal this is the best way.
-    Syncee.server.MarkPlayerLoaded(player)
-end)
-
-RS.Heartbeat:Connect(function()
-    -- replicate changes to clients.
-    local payloads = Syncee.server.GetDataToReplicate()
-    for player, buff in payloads do SyncEvent:FireClient(player, buff) end
-end)
-```
-
-### Client Setup Example
-```lua
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local Syncee = require(ReplicatedStorage.Packages.Syncee)
-local SyncEvent = ReplicatedStorage:WaitForChild("SyncEvent")
-
--- passing received buffer directly to DataReceived().
-SyncEvent.OnClientEvent:Connect(Syncee.client.DataReceived)
-
-task.spawn(function()
-    local rootData = Syncee.client.AwaitDataAsync()
-    print("Received initial player data:", rootData)
-end)
-
-SyncEvent:FireServer() -- marking to server that we are loaded.
-```
-
----
-
-
-## 2. Table Mutations
+## 1. Table Mutations
 
 :::info Things to keep in mind
 - Tables and buffers used as keys in a replicated table won't work properly. Syncee only handles values.
 - Syncee does not modify original table in any way at all and it's not aware of changes you directly apply to the tables.\
-    Which is why proxies or [`Syncee.server.Set`](../api/server#Set) should be used. Both are listed below.
+    Which is why proxies or [`server.Set`](../api/server#Set) should be used. Both are listed below.
 :::
 
 ### Explicit Mutation ([`Syncee.server.Set`](../api/server#Set))
 
-Assign values to table keys using [`Syncee.server.Set`](../api/server#Set). It updates the table, queues the key for replication, and fires connected change listeners.
+Assign values to table keys using [`server.Set`](../api/server#Set). It updates the table, queues the key for replication, and fires connected change listeners.
 
 ```lua
 Syncee.server.Set(playerData, "Coins", 500)
 Syncee.server.Set(playerData, "Gems", 25)
 ```
 
-You can also use [`Syncee.server.Replicate`](../api/server#Replicate) to force a table's key to be replicated even if it hasn't changed.
+You can also use [`server.Replicate`](../api/server#Replicate) to force a table's key to be replicated even if it hasn't changed.
 
 ### Table Wrappers
-Syncee provides wrappers for [`Syncee.server.Insert`](../api/server#Insert), [`Syncee.server.Remove`](../api/server#Remove), and [`Syncee.server.Clear`](../api/server#Clear) that automatically queue for replication.
+Syncee provides wrappers for [`server.Insert`](../api/server#Insert), [`server.Remove`](../api/server#Remove), and [`server.Clear`](../api/server#Clear) that automatically queue for replication.
 
 ```lua
 local inventory = playerData.Items
@@ -96,7 +39,7 @@ Syncee.server.Clear(inventory) -- (table.clear)
 ```
 
 ### Proxy Tables ([`Syncee.server.GetProxy`](../api/server#GetProxy))
-Proxy tables wrap a target table so that any property assignment (`proxy.key = value`) automatically runs [`Syncee.server.Set`](../api/server#Set) for convenience.
+Proxy tables wrap a target table so that any property assignment (`proxy.key = value`) automatically runs [`server.Set`](../api/server#Set) for convenience.
 
 ```lua
 local playerData = Syncee.GetData(player)
@@ -110,11 +53,14 @@ proxy.Level = 10
 local rawTable = Syncee.server.ProxyToTable(proxy)
 ```
 
-Proxies can be used in-place of the originals in any situation, and Syncee will treat it as the original table.
+:::warning Usage with Syncee's API
+- Proxies work fine with almost all of Syncee's API, but some such as [`syncee.Set`](../api/server#Insert) and [`WaitForValue`](../api/Syncee#WaitForValue) don't properly support proxies. If you intend on using either of these functions, use the original table instead.\
+- Do not manually add any proxies to any replicated table. though you can still do `proxy.something = anotherproxy`.
+:::
 
 ---
 
-## 3. Registering Schemas
+## 2. Registering Schemas
 Syncee uses **[Squish](https://github.com/anexpia/squish)** for schemas. Defining schemas significantly reduces network bandwidth as it allows Syncee to serialize the tables in a more compact form.
 
 By default, Syncee serializes everything in the table, however you can change it.
@@ -146,12 +92,12 @@ Syncee.RegisterSchema("PlayerData", Squish.record({
 ```
 
 :::info
-If a table already has an schema applied, either through [`SetSchema`](../api/server#SetSchema) or because it was nested in a monolithic schema, it will not apply again through this method even if the subschema should be different.
+If a table already has an schema applied, either through [`server.SetSchema`](../api/server#SetSchema) or because it was nested in a monolithic schema, it will not apply again through this method even if the subschema should be different.
 :::
 
 
 #### Manual Schema Applying
-Alternatively, you can register individual schemas for each table and use reference serdes (`Syncee.serdes.table` / `Syncee.serdes.buffer`) inside schemas, then manually call [`SetSchema`](../api/server#SetSchema) on each table.
+Alternatively, you can register individual schemas for each table and use reference serdes (`Syncee.serdes.table` / `Syncee.serdes.buffer`) inside schemas, then manually call [`server.SetSchema`](../api/server#SetSchema) on each table. Not the recommended way to do schemas but it's available.
 
 ```lua
 local Syncee = require(path.to.syncee)
@@ -183,7 +129,7 @@ So if there's something not serialized by the schema inside a table, Syncee will
 :::
 
 ### Binding Schemas to Tables
-Bind registered schemas to each table instance on the server using [`Syncee.server.SetSchema`](../api/server#SetSchema):
+Bind registered schemas to each table on the server using [`server.SetSchema`](../api/server#SetSchema):
 
 ```lua
 local playerData = Syncee.GetData(player)
@@ -199,7 +145,7 @@ Syncee.server.SetSchema(settingsTable, "Settings")
 
 ---
 
-## 4. Buffer Replication
+## 3. Buffer Replication
 As with tables, Syncee is unaware of changes on its own.\
 Syncee supports delta replication by using the 2 following methods.
 
@@ -218,7 +164,7 @@ Syncee.server.ReplicateBufferRegion(buf, 0, 12) -- replicate region from 0 to 11
 
 ### Auto-Replicating Buffer Wrapper ([`Syncee.buffer`](../api/Syncee#buffer))
 Syncee provides a wrapper for buffer library that automatically marks the written regions for replication for convenience.\
-Ideally you should use [`Syncee.server.ReplicateBufferRegion`](../api/server#ReplicateBufferRegion) to reduce the number of regions to merge.
+Ideally you should use [`server.ReplicateBufferRegion`](../api/server#ReplicateBufferRegion) to reduce the number of regions to merge.
 
 ```lua
 Syncee.buffer.writef32(buf, 0, 100)
@@ -227,7 +173,7 @@ Syncee.buffer.writef32(buf, 4, 100)
 -- both regions will be merged later, though this can be avoided by using ReplicateBufferRegion().
 ```
 
-## 5. Change Signals & Yielding
+## 4. Change Signals & Yielding
 
 ### Table Change Signal
 
@@ -251,7 +197,7 @@ signal:Connect(function(buf)
 end)
 ```
 
-### Waiting for Values ([`Syncee.WaitForValue`](../api/Syncee#WaitForValue))
+### Waiting for values ([`Syncee.WaitForValue`](../api/Syncee#WaitForValue))
 Yields current thread until the value of `key` in the table is non-nil.
 
 ```lua
@@ -261,7 +207,7 @@ if inventory then print("Inventory is ready!") end
 
 ---
 
-## 6. Others
+## 5. Others
 
 ### Rate Limiting ([`Syncee.server.SetRatelimit`](../api/server#SetRatelimit))
 ```lua

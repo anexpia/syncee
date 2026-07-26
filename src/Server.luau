@@ -16,12 +16,22 @@ local anyTableSerdes = Constants.anyTableSerdes
 local dataSerdes = Constants.DataSerdes
 local idArraySerdes = Squish.array(vlq)
 
-local tryrealloc, pushbuf, pushstr, setpos = Squish.util.tryrealloc, Squish.util.pushbuf, Squish.util.pushstr, Squish.util.setpos
+local tryrealloc, pushbuf, setpos, getbuf, getpos = Squish.util.tryrealloc, Squish.util.pushbuf, Squish.util.setpos, Squish.util.getbuf, Squish.util.getpos
 
 local Schemas = Constants.Schemas
 
 local ksweaktable = {__mode = 'ks'}
 local vsweaktable = {__mode = "vs"}
+
+--
+
+local MAP_DELETIONS = 1 
+local MAP_CLEARED = 2
+-- keep cleared and deletions in sequence.
+local MAP_NEW_BUFFERS = 3
+local MAP_BUFFER_DELTAS = 4
+local MAP_NEW_TABLES = 5
+local MAP_TABLE_DELTAS = 6
 
 --
 
@@ -50,7 +60,8 @@ type syncdata = {
 	changesignal: typeof( CreateSignal( __ :: (...any) -> () )) ?,
 	
 	partialreplicationbuffer: buffer?,
-	wholereplicationbuffer: buffer?,
+	partialdata: {any}?, -- {buffer, references}
+	wholedata: {any}?, -- {buffer, references}
 }
 
 type privatedata = {
@@ -70,7 +81,7 @@ type privatedata = {
 local exposed = {}
 
 local freeids: {number} = {}
-local lastfreeid = 4
+local lastfreeid = 0
 
 local playerdata: {[Player]: any} = {}
 local storage: {[any]: privatedata} = setmetatable({}, ksweaktable) :: any
@@ -136,8 +147,6 @@ local function assignsyncdata(t: anyTable | buffer): (syncdata)
 	local syncdata = syncdatastorage[t]
 	
 	if not syncdata then
-		t = proxymap[t :: anyTable] or t 
-
 		local id = claimid()
 		local node = NodeCreator.create(t)
 		
@@ -345,8 +354,6 @@ end
 
 -- Sets 'key' of 't' to 'value', replicates the change then fires TableChangedSignal if present.
 function exposed.Set(t: anyTable, key: any, value: any)
-	t = proxymap[t] or t 
-
 	local old = rawget(t, key)
 	if old == value then return end 
 
@@ -411,25 +418,26 @@ end
 -- Clears the content of the table and schedules the clearing for replication.
 function exposed.Clear(t: anyTable)
 	assert(type(t) == "table", `Expected to be provided a table, got {typeof(t)}.`)
-	t = proxymap[t] or t
 	local syncdata = syncdatastorage[t]
 	
 	if syncdata then
 		syncdata.node:disconnectall()
-		table.clear(t)
+		table.clear(syncdata.t :: anyTable)
 		
 		local replicator = addreplicator(syncdata)
 		table.clear(replicator)
 		
 		syncdata.cleared = true
 	else
-		table.clear(t)
+		table.clear(proxymap[t] or t)
 	end
 end
 
 -- table.insert(), but replicates the changes if on server and fires change signal.
 function exposed.Insert(t: anyTable, posOrValue: any, value: any?)	
 	t = proxymap[t] or t 
+
+	--TODO special instruction to avoid having to .set() everything.
 
 	if value == nil then
 		exposed.Set(t, #t + 1, posOrValue)
@@ -444,6 +452,8 @@ end
 -- table.remove(), but replicates the changes if on server and fires change signal.
 function exposed.Remove(t: anyTable, pos: number?)
 	t = proxymap[t] or t 
+
+	--TODO special instruction to avoid having to .set() everything.
 
 	pos = pos or #t
 
@@ -525,11 +535,14 @@ do
 	local set = exposed.Set
 	local proxy_mtbl = {
 		__index = function(proxy: anyTable, key: any)
-			return rawget(proxymap[proxy], key)
+			local value = rawget(proxymap[proxy], key)
+			if type(value) == "table" then return exposed.GetProxy(value) end -- proxy'ify tables. 
+
+			return value
 		end,
 		
 		__newindex = function(proxy: anyTable, key: any, value: any)
-			return set(proxymap[proxy], key, value)
+			return set(proxymap[proxy], key, proxymap[value] or value)
 		end,
 		
 		__len = function(proxy: anyTable)
@@ -546,6 +559,7 @@ do
 	}
 	
 	-- Returns a proxy for the provided table that automatically runs Syncee.server.set() upon any changes.
+	-- <strong>Do not use proxies with server.Set() or manually add them to replicated tables</strong>. Unexpected behaviors may occur if this is done.
 	function exposed.GetProxy(t: anyTable): anyTable
 		local private = storage[t]
 
@@ -595,7 +609,6 @@ do
 		
 		local cursor = Squish.cursor()
 		local replicator = syncdata.replicator :: {number}
-		local strBuf = buffer.tostring(buf)
 		
 		local array = {}
 		local originalcount = 0
@@ -605,7 +618,7 @@ do
 			array[originalcount] = start
 		end
 		
-		table.sort(array)
+		if originalcount > 1 then table.sort(array) end
 
 		local coalesced: {number} = {}
 		local regioncount = 0
@@ -633,9 +646,12 @@ do
 			local start = coalesced[i]
 			local length = (replicator[start] - start) + 1
 
+			local cursorpos = getpos(cursor)
+
 			tryrealloc(cursor, length)
-			pushstr(cursor, string.sub(strBuf, start + 1, start + length), length)
-			
+			buffer.copy(getbuf(cursor), cursorpos, buf, start, length)
+			setpos(cursor, cursorpos + length)
+						
 			vlqser(cursor, length)
 			vlqser(cursor, start - (coalesced[i - 1] or 0))
 		end
@@ -651,17 +667,16 @@ do
 
 	local function addPlayer(player: Player, syncdata: syncdata, whole: boolean?, datachanged: boolean?)
 		local map = getplayermap(player)
-		if map[syncdata.id] then return end
 		
 		if syncdata.isbuffer then
 			if whole then
-				local newbufs = map[2]
-				if not newbufs then newbufs = {}; map[2] = newbufs end
+				local newbufs = map[MAP_NEW_BUFFERS]
+				if not newbufs then newbufs = {}; map[MAP_NEW_BUFFERS] = newbufs end
 
 				table.insert(newbufs, syncdata)
 			elseif datachanged then
-				local deltas = map[3]
-				if not deltas then deltas = {}; map[3] = deltas end
+				local deltas = map[MAP_BUFFER_DELTAS]
+				if not deltas then deltas = {}; map[MAP_BUFFER_DELTAS] = deltas end
 
 				table.insert(deltas, deltaBuffer(syncdata.t :: buffer, syncdata))
 			end
@@ -670,60 +685,67 @@ do
 		end
 
 		if not whole and syncdata.cleared then
-			local cleared = map[1]
-			if not cleared then cleared = {}; map[1] = cleared end
+			local cleared = map[MAP_CLEARED]
+			if not cleared then cleared = {}; map[MAP_CLEARED] = cleared end
 			table.insert(cleared, syncdata.id)
 			
 			if not datachanged then return end
 		end
 
-		local bufferkey = if whole then "wholereplicationbuffer" else "partialreplicationbuffer"
-		local savedbuffer = (syncdata :: any)[bufferkey] :: buffer
+		local mainkey = if whole then "wholedata" else "partialdata"
+		local tosend = (syncdata :: any)[mainkey]
 
-		if savedbuffer == nil then
+		if not tosend then
 			local t = syncdata.t :: anyTable
 			local data = if whole then t else syncdata.replicator :: anyTable
-			
+
 			local privatedata = storage[t]
 			local schemaidx = if privatedata then privatedata.schemaidx else nil
 			local schema = Schemas[schemaidx :: any]
-			
-			local cursor = Squish.cursor()
-			
-			if schema then schema.ser(cursor, data)
-			else 
-				schemaidx = 0
-				anyTableSerdes.ser(cursor, data) 
-			end
-			
-			vlqser(cursor, schemaidx :: number)
-			
-			savedbuffer = Squish.tobuffer(cursor);
-			(syncdata :: any)[bufferkey] = savedbuffer
-		end 
-		
-		local len = buffer.len(savedbuffer)
-		local buf = buffer.create(len + 1)
-		buffer.copy(buf, 0, savedbuffer, 0, len)
-		buffer.writeu8(buf, len, bit32.bor(if whole then 1 else 0, if whole and syncdata.node.player == player then 2 else 0))
 
-		map[syncdata.id] = buf
+			local cursor = Squish.cursor()
+
+			if schema then
+				schema.ser(cursor, data)
+			else
+				schemaidx = 0
+				anyTableSerdes.ser(cursor, data)
+			end
+
+			vlqser(cursor, schemaidx :: number)
+
+			local savedbuffer = Squish.tobuffer(cursor)
+			local savedrefs = cursor.refs;
+
+			tosend = {savedbuffer, savedrefs}
+			(syncdata :: any)[mainkey] = tosend
+		end 
+
+		local mapid = if whole then MAP_NEW_TABLES else MAP_TABLE_DELTAS
+		local submap = map[mapid]
+
+		if not submap then 
+			submap = {} 
+			map[mapid] = submap 
+		end
+		
+		submap[syncdata.id] = tosend
 	end
 
 	local function removePlayer(player: Player, data: syncdata)
 		local map = getplayermap(player)
 		
-		local removed = map[0]
+		local removed = map[MAP_DELETIONS]
 		if not removed then 
 			removed = {} 
-			map[0] = removed 
+			map[MAP_DELETIONS] = removed 
 		end
 		
 		table.insert(removed, data.id)
 	end
 
-	-- Returns a dictionary mapping each player to a buffer containing the data to replicate to them.
-	function exposed.GetDataToReplicate(): {[Player]: buffer}
+	-- Returns a dictionary mapping each player to a table containing a buffer and an auxillary references array to send to them.
+	function exposed.GetDataToReplicate(): {[Player]: {b: buffer, refs: {{any} | false}}}
 		
 		local now = tick()
 		
@@ -812,27 +834,20 @@ do
 			end
 		end
 		
-		-- handle special maps
-		-- [0] = deletions
-		-- [1] = clearing
-		-- [2] = new buffers
-		-- [3] = buffer deltas
-		-- [4] and beyond is unreserved.
-		
 		for player, map in replicationmaps do 
-			for i = 0, 1 do 
+			local cursor = Squish.cursor()
+
+			for i = MAP_DELETIONS, MAP_CLEARED do
 				local t = map[i]
 				if t then 
-					local cursor = Squish.cursor()
 					idArraySerdes.ser(cursor, t)
 					map[i] = Squish.tobuffer(cursor)
+					setpos(cursor, 0)
 				end
 			end
 			
-			local newbufs = map[2]
-			if newbufs then
-				local cursor = Squish.cursor()
-				
+			local newbufs = map[MAP_NEW_BUFFERS]
+			if newbufs then				
 				for _, syncdata in newbufs do
 					local t: buffer = syncdata.t 
 					local len = buffer.len(t)
@@ -845,13 +860,12 @@ do
 				
 				vlqser(cursor, #newbufs)
 				
-				map[2] = Squish.tobuffer(cursor)
+				map[MAP_NEW_BUFFERS] = Squish.tobuffer(cursor)
+				setpos(cursor, 0)
 			end
 			
-			local deltaBufs = map[3]
-			if deltaBufs then
-				local cursor = Squish.cursor()
-				
+			local deltaBufs = map[MAP_BUFFER_DELTAS]
+			if deltaBufs then				
 				for _, buf in deltaBufs do 
 					-- not writing length of buffer because that information is embedded in each region.
 					
@@ -862,11 +876,72 @@ do
 				
 				vlqser(cursor, #deltaBufs)
 				
-				map[3] = Squish.tobuffer(cursor)
+				map[MAP_BUFFER_DELTAS] = Squish.tobuffer(cursor)
+				setpos(cursor, 0)
 			end
+
+			local refsarray: {{any} | false}
+			local hasrefs = false 
+
+			local refsidx = 0
+
+			local newtables = map[MAP_NEW_TABLES]
+			if newtables then
+				refsarray = refsarray or {}
+				local idsarray = {}
+
+				for id, data in newtables do 
+					local b, refs = data[1], data[2]
+
+					refsidx += 1
+					idsarray[refsidx] = id
+
+					if refs then hasrefs = true end
+					refsarray[refsidx] = refs or false
+
+					local len = buffer.len(b)
+					tryrealloc(cursor, len)
+					pushbuf(cursor, b, len)
+				end
+
+				idArraySerdes.ser(cursor, idsarray)
+				map[MAP_NEW_TABLES] = Squish.tobuffer(cursor)
+				setpos(cursor, 0)
+			end
+
+			local deltatables = map[MAP_TABLE_DELTAS]
+			if deltatables then
+				refsarray = refsarray or {}
+				local deltacount = 0
+
+				for id, data in deltatables do 
+					local b, refs = data[1], data[2]
+
+					refsidx += 1
+
+					if refs then hasrefs = true end
+					refsarray[refsidx] = refs or false
+
+					local len = buffer.len(b)
+					tryrealloc(cursor, len)
+					pushbuf(cursor, b, len)
+					vlqser(cursor, id)
+
+					deltacount += 1
+				end
+
+				vlqser(cursor, deltacount)
+				
+				map[MAP_TABLE_DELTAS] = Squish.tobuffer(cursor)
+
+				setpos(cursor, 0)
+			end
+			
+			if hasrefs then map.refs = refsarray end
 		end
 		
 		-- cleanup
+		-- buffer.writeu8(buf, len, bit32.bor(if whole then 1 else 0, if whole and syncdata.node.player == player then 2 else 0))
 		
 		local limitedcount = 0
 		
@@ -882,19 +957,24 @@ do
 				limitedcount += 1
 				ratelimitedarray[limitedcount] = syncdata
 				
-				syncdata.wholereplicationbuffer = nil -- ratelimits dont stop initial full data send.
+				 -- ratelimits dont stop initial full data send.
+				syncdata.wholedata = nil
 			else
-				if syncdata.isbuffer and syncdata.replicator then
-					-- this.. isn't a good place to fire change signals for buffers. but i don't know any better location.
-					local signal = syncdata.changesignal :: BufferChangeSignal
-					if signal then signal:FireDeferred(syncdata.t :: buffer) end
+				if syncdata.isbuffer then 
+					if syncdata.replicator then
+						syncdata.partialreplicationbuffer = nil	
+
+						-- this.. isn't a good place to fire change signals for buffers. but i don't know any better location.
+						local signal = syncdata.changesignal :: BufferChangeSignal
+						if signal then signal:FireDeferred(syncdata.t :: buffer) end
+					end
+				else 
+					syncdata.wholedata = nil 
+					syncdata.partialdata = nil
 				end
 				
 				syncdata.replicator = nil 
 				syncdata.cleared = nil
-				
-				syncdata.wholereplicationbuffer = nil 
-				syncdata.partialreplicationbuffer = nil
 			end
 		end
 
@@ -911,8 +991,15 @@ do
 		local cursor = Squish.cursor()
 
 		for player, map in replicationmaps do 
+			local refs = map.refs 
+			map.refs = nil 
+
+			local rootid = exposed.GetIdOfValue(playerdata[player]) :: number
+
 			dataSerdes.ser(cursor, map)
-			toreturn[player] = Squish.tobuffer(cursor)
+			vlqser(cursor, rootid or 0)
+
+			toreturn[player] = {b = Squish.tobuffer(cursor), refs = refs}
 			setpos(cursor, 0)
 		end
 
@@ -969,11 +1056,16 @@ end
 
 
 NodeCreator.Delinked = function(node: node)
-	local t = node.value;
+	local t = node.value
 	local syncdata: syncdata? = syncdatastorage[t]
 	
 	if syncdata then
 		syncdatastorage[t] = nil 
+
+		local private = storage[t]
+		if private and private.proxy then 
+			syncdatastorage[private] = nil
+		end
 		
 		if syncdata.changesignal then
 			syncdata.changesignal:Destroy()
@@ -991,7 +1083,7 @@ NodeCreator.AncestryChanged = function(nodes: {node})
 		local syncdata = syncdatastorage[node.value]
 		if syncdata then addreplicator(syncdata) end
 	end
-end;
+end
 
 (Constants.TableReferenceSerdes :: any).ser = function(cursor: Squish.Cursor, value: anyTable)
 	local syncdata = syncdatastorage[value]

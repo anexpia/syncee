@@ -103,8 +103,8 @@ exposed.server.Set = implementation.Set :: typeof(
 )
 
 exposed.server.GetDataToReplicate = implementation.GetDataToReplicate :: typeof(
-	-- Returns a dictionary mapping each player to a buffer containing the data to replicate to them.
-	function(): {[Player]: buffer}
+	-- Returns a dictionary mapping each player to a table containing a buffer and an auxillary references array to send to them.
+	function(): {[Player]: {b: buffer, refs: {{any} | false}?}}
 		return __ end
 )
 
@@ -116,6 +116,7 @@ exposed.server.MarkPlayerLoaded = implementation.MarkPlayerLoaded :: typeof(
 
 exposed.server.GetProxy = implementation.GetProxy :: typeof(
 	-- Returns a proxy for the provided table that automatically runs Syncee.server.Set() upon any changes.
+	-- <strong>Do not use proxies with server.Set() or manually add them to replicated tables</strong>. Unexpected behaviors may occur if this is done.
 	function(t: anyTable): anyTable
 		return __ end
 )
@@ -153,8 +154,8 @@ exposed.server.GetRecipients = implementation.GetRecipients :: typeof(
 -- client
 
 exposed.client.DataReceived = implementation.DataReceived :: typeof(
-	-- Should be provided the buffer of replicated changes the server sends.
-	function(b: buffer) 
+	-- Should be provided the buffer of replicated changes the server sends as well as references if present.
+	function(b: buffer, refs: {{any} | false}?) 
 		return __ end
 )
 

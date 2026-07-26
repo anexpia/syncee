@@ -53,7 +53,7 @@ do
 	Squish.addliterals(anySerdes, _nilvalue)
 end
 
-local DataSerdes = Squish.map(Squish.vlq(), Squish.buffer())
+local DataSerdes = Squish.map(Squish.u8(), Squish.buffer())
 
 local Schemas: {Squish.SerDes<any>} = {[0] = anyTableSerdes}
 local SchemaNameToIdx: {[string]: number} = {default = 0}

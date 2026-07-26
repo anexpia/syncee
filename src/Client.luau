@@ -11,14 +11,21 @@ local Constants = require("./Constants")
 
 local _nilvalue = Constants.nilvalue
 
-local u8, vlqdes = Squish.u8(), Squish.vlq().des
+local vlqdes = Squish.vlq().des
 local bufferSerdes = Squish.buffer()
 
-local setpos, getpos = Squish.util.setpos, Squish.util.getpos
+local setpos, getpos, setbuf = Squish.util.setpos, Squish.util.getpos, Squish.util.setbuf
 
 local anyTableSerdes = Constants.anyTableSerdes
 local dataSerdes = Constants.DataSerdes
 local Schemas = Constants.Schemas
+
+local MAP_DELETIONS = 1
+local MAP_CLEARED = 2
+local MAP_NEW_BUFFERS = 3
+local MAP_BUFFER_DELTAS = 4
+local MAP_NEW_TABLES = 5
+local MAP_TABLE_DELTAS = 6
 
 local __: any = nil
 
@@ -28,10 +35,10 @@ type BufferChangeSignal = Constants.BufferChangeSignal
 
 local exposed = {}
 
-local debuggingEnabled = if false then RS:IsStudio() else false
+local debuggingEnabled = if true then RS:IsStudio() else false
 
 local AwaitDataSignal = CreateSignal( __ )
-local data: anyTable
+local rootdata: anyTable
 local idtovalue: {any} = {}
 local valuetoid: {[any]: number} = {}
 local valuetosignal: {[anyTable]: typeof( CreateSignal( __ :: (...any) -> () ) )} = {};
@@ -75,31 +82,30 @@ local function warn(text: string)
 end
 
 
--- Should be provided the buffer of replicated changes the server sends.
-function exposed.DataReceived(b: buffer)
+-- Should be provided the buffer of replicated changes the server sends as well as references if present.
+function exposed.DataReceived(b: buffer, refs: {{any}}?)
 	log("|:| SYNCEE -> DATA RECEIVED")
 
-	local modifications = dataSerdes.des(Squish.frombuffer(b))
-	
-	-- handle special maps
-	-- [0] = deletions
-	-- [1] = clearing
-	-- [2] = new buffers
-	-- [3] = buffer deltas
-	-- [4] and beyond is unreserved.
-	
+	local maincursor = Squish.frombuffer(b)
+	local rootid = vlqdes(maincursor)
+
+	local refsmax = refs and #refs
+
+	local modifications = dataSerdes.des(maincursor)
 	local checkreplicators: {[number]: {[any]: any}}
 
-	local removed_buf = modifications[0]
+	local removed_buf = modifications[MAP_DELETIONS]
 	if removed_buf then
 		
-		local cursor = Squish.frombuffer(removed_buf)
-		local len = vlqdes(cursor)
+		setbuf(maincursor, removed_buf)
+		setpos(maincursor, buffer.len(removed_buf))
+
+		local len = vlqdes(maincursor)
 		
 		log(`Deleting {len} table(s) and/or buffer(s).`)
 		
 		for i = 1, len do 
-			local id = vlqdes(cursor)			
+			local id = vlqdes(maincursor)			
 			local oldt = idtovalue[id]
 
 			if oldt then
@@ -112,75 +118,77 @@ function exposed.DataReceived(b: buffer)
 				end
 			end
 		end
-
-		modifications[0] = nil
 	end
 
-	local cleared_buf = modifications[1]
+	local cleared_buf = modifications[MAP_CLEARED]
 	if cleared_buf then
 
-		local cursor = Squish.frombuffer(cleared_buf)
-		local len = vlqdes(cursor)
+		setbuf(maincursor, cleared_buf)
+		setpos(maincursor, buffer.len(cleared_buf))
+		
+		local len = vlqdes(maincursor)
 		
 		log(`Clearing {len} table(s).`)
 		
 		for i = 1, len do 
-			local id = vlqdes(cursor)
+			local id = vlqdes(maincursor)
 			
 			local original = idtovalue[id]
 			if original then table.clear(original) end
 		end
-		
-		modifications[1] = nil
 	end
 	
-	local newbufs_buf = modifications[2]
+	local newbufs_buf = modifications[MAP_NEW_BUFFERS]
 	if newbufs_buf then
-		local cursor = Squish.frombuffer(newbufs_buf)
-		local len = vlqdes(cursor)
+
+		setbuf(maincursor, newbufs_buf)
+		setpos(maincursor, buffer.len(newbufs_buf))
+
+		local len = vlqdes(maincursor)
 		
 		log(`Allocating {len} new buffer(s).`)
 		
 		for _ = 1, len do
-			local id = vlqdes(cursor)
-			local buf = bufferSerdes.des(cursor)
+			local id = vlqdes(maincursor)
+			local buf = bufferSerdes.des(maincursor)
 			
 			idtovalue[id] = buf :: any
 			valuetoid[buf :: any] = id
 			
 			print(`received a new buffer with id:{id}`)
 		end
-		
-		modifications[2] = nil
 	end
 	
-	local deltas_buf = modifications[3]
+	local deltas_buf = modifications[MAP_BUFFER_DELTAS]
 	if deltas_buf then
-		local cursor = Squish.frombuffer(deltas_buf)
-		local len = vlqdes(cursor)
+
+		setbuf(maincursor, deltas_buf)
+		setpos(maincursor, buffer.len(deltas_buf))
+
+		local len = vlqdes(maincursor)
 		
-		local cursorbuf = Squish.util.getbuf(cursor)
+		local cursorbuf = Squish.util.getbuf(maincursor)
 				
 		log(`Applying deltas to {len} buffer(s).`)
 		
 		for _ = 1, len do
-			local id = vlqdes(cursor)
-			local regioncount = vlqdes(cursor)
+			local id = vlqdes(maincursor)
+			local regioncount = vlqdes(maincursor)
 						
 			local original = idtovalue[id]
 			if original and typeof(original) == "buffer" then
 				local lastStart = 0
 				
 				for i = 1, regioncount do
-					local rawOffset = vlqdes(cursor)
-					local length = vlqdes(cursor)
+					local rawOffset = vlqdes(maincursor)
+					local length = vlqdes(maincursor)
 					
 					local start = lastStart + rawOffset
 					lastStart = start
 					
-					local pos = getpos(cursor) - length
+					local pos = getpos(maincursor) - length
 					buffer.copy(original, start, cursorbuf, pos, length)
-					setpos(cursor, pos)
+					setpos(maincursor, pos)
 				end
 				
 				local signal = valuetosignal[original] :: BufferChangeSignal
@@ -189,53 +197,71 @@ function exposed.DataReceived(b: buffer)
 				warn(`Couldn't find a buffer associated with id:{id}{if original then ", a table has this id." else ""}`)
 				
 				for _ = 1, regioncount do 
-					vlqdes(cursor)
+					vlqdes(maincursor)
 					
-					local length = vlqdes(cursor)
-					setpos(cursor, getpos(cursor) - length)
+					local length = vlqdes(maincursor)
+					setpos(maincursor, getpos(maincursor) - length)
 				end
 			end
 		end
-		
-		modifications[3] = nil
 	end
 	
-	log("Allocating new tables.")
-	
-	for id, buf in modifications do 
-		local flags = buffer.readu8(buf, buffer.len(buf) - 1)
+	local newtables_buf = modifications[MAP_NEW_TABLES]
+	if newtables_buf then
 
-		if bit32.btest(flags, 1) then
+		setbuf(maincursor, newtables_buf)
+		setpos(maincursor, buffer.len(newtables_buf))
+
+		local idscount = vlqdes(maincursor)
+		local idsarray = table.create(idscount, 0)
+
+		-- allocating new tables, backwards.
+		-- allocations need to be done first so references to new tables are valid.
+		for i = 1, idscount do 
+			local id = vlqdes(maincursor)
 			local v = {}
+
+			idsarray[i] = id
+			
 			idtovalue[id] = v 
 			valuetoid[v] = id
 			
-			if data == nil and bit32.btest(flags, 2) then
-				data = v
-				print(`received root table with id:{id}`)
-			else 
-				print(`received a new table with id:{id}`)
-			end
+			print(`received a new table with id:{id}`)
+		end
+
+		-- deserializing, backwards.
+		for i, id in idsarray do 
+			local schemaidx = vlqdes(maincursor)
+			local v = idtovalue[id]
+			
+			maincursor.refs = if refs then refs[idscount - (i - 1)] else nil;
+			(if schemaidx > 0 then Schemas[schemaidx] else anyTableSerdes).des(maincursor, v)
 		end
 	end
 	
-	log("Deserializing tables.")
-
-	for id, buf in modifications do 
-		local cursor = Squish.frombuffer(buf)
-		local flags = u8.des(cursor)
+	local tabledeltas_buf = modifications[MAP_TABLE_DELTAS]
+	if tabledeltas_buf then
 		
-		local isnewtable = bit32.btest(flags, 1)
-		local preallocated = if isnewtable then idtovalue[id] else nil
-			
-		local schemaidx = vlqdes(cursor)
-		local v = (if schemaidx > 0 then Schemas[schemaidx] else anyTableSerdes).des(cursor, preallocated)
+		setbuf(maincursor, tabledeltas_buf)
+		setpos(maincursor, buffer.len(tabledeltas_buf))
+		
+		checkreplicators = {}
 
-		if not isnewtable then
-			if not checkreplicators then checkreplicators = {} end
+		local count = vlqdes(maincursor)
+		
+		for i = 0, count - 1 do 
+			local id = vlqdes(maincursor)
+			local schemaidx = vlqdes(maincursor)
+
+			maincursor.refs = if refs then refs[(refsmax :: number) - i] else nil
+			local v = (if schemaidx > 0 then Schemas[schemaidx] else anyTableSerdes).des(maincursor, nil)
 			checkreplicators[id] = v 
-			
 		end
+	end
+
+	if (not rootdata) then
+		rootdata = idtovalue[rootid]
+		if rootdata then print(`received root table with id:{rootid}`) end
 	end
 
 	if checkreplicators then
@@ -267,9 +293,9 @@ function exposed.DataReceived(b: buffer)
 		end
 	end
 
-	if AwaitDataSignal and data then
+	if AwaitDataSignal and rootdata then
 		log("Firing AwaitDataSignal.")
-		AwaitDataSignal:FireDeferred(data)
+		AwaitDataSignal:Fire(rootdata)
 		AwaitDataSignal:Destroy()
 		AwaitDataSignal = __
 	end
@@ -279,12 +305,12 @@ end
 
 -- Waits for the root replication table of the client to be received from server.
 function exposed.AwaitDataAsync(): anyTable
-	return if AwaitDataSignal then AwaitDataSignal:Wait() else data
+	return if AwaitDataSignal then AwaitDataSignal:Wait() else rootdata
 end
 
 -- Returns the root replication table of localplayer.
 function exposed.GetData(): anyTable?
-	return data
+	return rootdata
 end
 
 -- Returns the table or buffer associated with the provided id if present.
@@ -318,9 +344,5 @@ function exposed.GetBufferChangedSignal(b: buffer): BufferChangeSignal
 	assertRegisteredBuffer(b)
 	return GetChangeSignal(b)
 end
-
--- Waits until 'key' of the provided table is not nil, then returns the value.
-
-
 
 return exposed
