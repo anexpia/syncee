@@ -24,6 +24,9 @@ Syncee does not handle sending the data to clients on its own. It lets you do th
 
 ---
 
+## Documentation
+For usage guide and API reference, check the **[documentation](https://anexpia.github.io/syncee/)**.
+
 ## Installation
 
 ### Manual: 
