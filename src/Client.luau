@@ -35,7 +35,7 @@ type BufferChangeSignal = Constants.BufferChangeSignal
 
 local exposed = {}
 
-local debuggingEnabled = if true then RS:IsStudio() else false
+local debuggingEnabled = if false then RS:IsStudio() else false
 
 local AwaitDataSignal = CreateSignal( __ )
 local rootdata: anyTable
@@ -236,6 +236,8 @@ function exposed.DataReceived(b: buffer, refs: {{any}}?)
 			
 			maincursor.refs = if refs then refs[idscount - (i - 1)] else nil;
 			(if schemaidx > 0 then Schemas[schemaidx] else anyTableSerdes).des(maincursor, v)
+
+			maincursor.desdeduplookup = nil
 		end
 	end
 	
@@ -256,6 +258,8 @@ function exposed.DataReceived(b: buffer, refs: {{any}}?)
 			maincursor.refs = if refs then refs[(refsmax :: number) - i] else nil
 			local v = (if schemaidx > 0 then Schemas[schemaidx] else anyTableSerdes).des(maincursor, nil)
 			checkreplicators[id] = v 
+
+			maincursor.desdeduplookup = nil
 		end
 	end
 

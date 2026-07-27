@@ -44,7 +44,7 @@ pesde add anexpia/syncee
 ### Wally:
 Add to your `wally.toml` under `[dependencies]`:
 ```toml
-syncee = "anexpia/syncee@1.1.0"
+syncee = "anexpia/syncee@1.1.1"
 ```
 ---
 

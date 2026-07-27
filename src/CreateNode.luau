@@ -40,7 +40,7 @@ local function onAncestryChanged(node: node, changed: {node}?)
 	-- needs to be here since updateorigins() may run before ancestry changes are processed
 	-- which will cause updateorigins() in main loop
 	
-	if node.hasancestrychanged or node.isorigin then return end 
+	if node.hasancestrychanged then return end 
 	node.hasancestrychanged = true
 
 	local isstart = changed == nil 
@@ -61,7 +61,7 @@ local function recursivegetfrontier(node: node, frontiers: {node}, checked: {[no
 	local awaiting = node.awaitingupdate
 	local isfrontier = (not awaiting) or node.isorigin
 	
-	checked[node] = not awaiting
+	checked[node] = if awaiting then (if isfrontier then 0 else false) else true
 	
 	if isfrontier then
 		table.insert(frontiers, node)
@@ -116,22 +116,14 @@ function api.updateorigins(node: node): {[node]: true}
 	local origins = node.origins
 
 	if node.awaitingupdate then
-
-		if node.isorigin then
-			node.awaitingupdate = false	
-			
-			table.clear(origins)
-			origins[node] = true
-		else
-			findallorigins(node)
-		end
+		findallorigins(node)
 	end 
 	
 	return origins
 end
 
 function api.connect(node: node, othernode: node, key: any): boolean?
-	if node == othernode or othernode.isorigin then return nil end
+	if node == othernode then return nil end
 	
 	local ascend = node.ascend[othernode]
 	
@@ -148,7 +140,7 @@ function api.connect(node: node, othernode: node, key: any): boolean?
 end
 
 function api.disconnect(node: node, othernode: node, key: any): boolean?
-	if node == othernode or othernode.isorigin then return nil end
+	if node == othernode then return nil end
 	
 	local ascend = node.ascend[othernode]
 

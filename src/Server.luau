@@ -119,28 +119,27 @@ local function addreplicator(syncdata: syncdata): anyTable
 	return syncdata.replicator :: anyTable
 end
 
-local function applySubschemaIfNeeded(childTable: anyTable, key: any, subschemas: {[any]: number}?, subschemaid: number?)
-	local childprivate = storage[childTable]
-	if childprivate and childprivate.schemaidx then return end
+local function canApplySubschema(v: anyTable | buffer): boolean
+	if type(v) ~= "table" then return false end 
+
+	local private = storage[v]
+	if private and private.schemaidx then return false end 
+
+	return true
+end
+
+local function applySubschemaIfNeeded(childTable: anyTable, key: any, subschemas: {[any]: number}?, subschemaid: number?): boolean?
+	if not canApplySubschema(childTable) then return false end
 	
 	local schemaid: number? = nil
 
 	if subschemas then schemaid = subschemas[key]
 	else schemaid = subschemaid end
 	
-	if not schemaid then return end
+	if not schemaid then return nil end
 	exposed.SetSchema(childTable, schemaid)
-end
 
-local function propagateSubschemas(t: anyTable, private: privatedata)
-	local subschemas = private.subschemas
-	local subschemaid = private.subschemaid
-
-	for k, v in t do
-		if type(v) == "table" then
-			applySubschemaIfNeeded(v, k, subschemas, subschemaid)
-		end
-	end
+	return true
 end
 
 local function assignsyncdata(t: anyTable | buffer): (syncdata)
@@ -279,7 +278,26 @@ function exposed.SetSchema(t: anyTable, schema: (number | string)?)
 			data.subschemaid = subschemaidx
 			data.hassubschemas = hassubschemas
 
-			if hassubschemas and syncdatastorage[t] then propagateSubschemas(t, data) end
+			local syncdata = hassubschemas and syncdatastorage[t]
+			if syncdata then 
+				if subschemaidx then
+					for subnode in syncdata.node.ascend do
+						local v = subnode.value
+						if not canApplySubschema(v) then continue end 
+
+						exposed.SetSchema(v, subschemaidx)
+					end
+				else 
+					for key, subschema in subschemas do 
+						local v = t[key]
+						if v then 
+							if not canApplySubschema(v) then continue end 
+
+							exposed.SetSchema(v, subschema)
+						end
+					end
+				end
+			end
 		else
 			data.hassubschemas = false
 			data.subschemas = nil
@@ -299,7 +317,14 @@ function exposed.SetRatelimit(t: anyTable | buffer, ratelimit: number?)
 	assert(typ == "table" or typ == "buffer", `Expected a table or buffer, got {typeof(t)}`)
 
 	local data = if ratelimit then assignprivatedata(t) else storage[t]
-	if data then data.ratelimit = ratelimit end
+	if data then
+		data.ratelimit = ratelimit
+		
+		if not ratelimit then
+			local syncdata = syncdatastorage[t]
+			if syncdata then syncdata.ratelimited = nil end
+		end
+	end
 end
 
 -- Replicates the value of the provided key, even if not changed.
@@ -307,18 +332,18 @@ function exposed.Replicate(t: anyTable, key: any)
 	local syncdata = assertRegisteredTable(t)
 	local t = syncdata.t :: anyTable
 
+	local value = t[key]
+	local rv = value
+
 	for othernode, keys in syncdata.node.ascend do
 		if keys[key] then 
-			if t[key] ~= othernode.value then
+			if value ~= othernode.value then
 				syncdata.node:disconnect(othernode, key)
 				break -- no other node can be bound to this key.
 			else return end -- don't need to continue because its guaranteed that nothing changed.
 		end
 	end
 
-	local value = rawget(t, key) :: any
-	local rv = value
-	
 	local t_new = type(value)
 	local newistable = t_new == "table"
 	
@@ -354,10 +379,10 @@ end
 
 -- Sets 'key' of 't' to 'value', replicates the change then fires TableChangedSignal if present.
 function exposed.Set(t: anyTable, key: any, value: any)
-	local old = rawget(t, key)
+	local old = t[key]
 	if old == value then return end 
 
-	rawset(t, key, value)
+	t[key] = value
 
 	local syncdata = syncdatastorage[t]
 
@@ -455,12 +480,15 @@ function exposed.Remove(t: anyTable, pos: number?)
 
 	--TODO special instruction to avoid having to .set() everything.
 
-	pos = pos or #t
+	local len = #t	
+	pos = pos or len
 
+	if pos > len or pos == 0 then return end 
+	
 	local old = t[pos]
-
-	for i = pos, #t - 1 do exposed.Set(t, i, t[i + 1]) end
-	exposed.Set(t, #t, nil)
+	
+	for i = pos, len - 1 do exposed.Set(t, i, t[i + 1]) end
+	exposed.Set(t, len, nil)
 
 	return old
 end
@@ -796,7 +824,7 @@ do
 					local currentrecipients = syncdata.recipients
 
 					for node, state in currentrecipients do 
-						if newrecipients[node] then
+						if not newrecipients[node] then
 							local player = if state then node.player else nil 
 							if player then removePlayer(player, syncdata) end
 							
@@ -834,8 +862,8 @@ do
 			end
 		end
 		
+		local cursor = Squish.cursor()
 		for player, map in replicationmaps do 
-			local cursor = Squish.cursor()
 
 			for i = MAP_DELETIONS, MAP_CLEARED do
 				local t = map[i]
@@ -1063,9 +1091,8 @@ NodeCreator.Delinked = function(node: node)
 		syncdatastorage[t] = nil 
 
 		local private = storage[t]
-		if private and private.proxy then 
-			syncdatastorage[private] = nil
-		end
+		local proxy = private and private.proxy
+		if proxy then syncdatastorage[proxy] = nil end
 		
 		if syncdata.changesignal then
 			syncdata.changesignal:Destroy()

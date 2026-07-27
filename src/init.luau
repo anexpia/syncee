@@ -338,7 +338,8 @@ do
 						
 						if v1 and v2 then xs[i] = _nilvalue
 						elseif v1 then xs[i] = true
-						elseif not v2 then xs[i] = nil end
+						elseif v2 then xs[i] = false 
+						else xs[i] = nil end
 					end
 
 					return xs :: any
