@@ -4,11 +4,11 @@ sidebar_position: 1
 
 # Intro
 
-**Syncee** is a high-performance, flexible, and optionally schema-driven state replication library for Roblox. It gives you complete control over how data is replicated to clients with minimal overhead and a simple intuitive API.
+**Syncee** is a lightweight, flexible, and optionally schema-driven data replication library for Roblox. It gives you complete control over how data is replicated to clients with minimal overhead and a simple intuitive API.
 
 ---
 
-## Key Features
+## Features
 - **Simple & Flexible**: Easily replicate tables & buffers to specific clients with full control over replication targets.
 - **Buffer Support**
 - **Delta Replication**: Only replicates what changes within tables and buffers.
@@ -17,16 +17,13 @@ sidebar_position: 1
 - **Proxies**: You can create proxies for tables that automatically handle updates, with near-full support when used as parameters in Syncee's API.
 
 ## How it differs
-
-Compared to alternatives present, **Syncee** handles replication differently and provides more features.
-- You do not need to explicity mark tables for replication.
-- Replicating anything is through a single function call.
-- Not path-based. Tables and buffers are each assigned a single ID.
-- Doesn't modify tables in any way or force you to use proxies. They are optional.
-- Supports having multiple copies of same table and cyclic tables.
-- Supports buffer delta replication.
-
-Syncee does not handle sending the data to clients on its own. It lets you do this yourself so you can integrate it into your own networking solution.
+Compared to the alternatives. It takes a different approach to the API and how data is replicated.
+- You don't explicitly mark tables as replicated. Each player is assigned a root table in which everything is sent to them.
+  You can structure this table however you want. You can also add other players' root tables in each other if you ever want to and it'll work fine.
+- It's not aware of the changes you do to the tables on its own as it doesn't modify the original tables in any form or copy them for comparison. You're responsible for telling it what's changing.
+- It does not send the changes automatically on its own. It lets you handle this yourself so you can integrate it into your networking solution seamlessly.
+- Doesn't use paths. Each table & buffer is assigned a unique id.
+- Supports having multiple copies of the same table and cyclic tables.
 
 ---
 

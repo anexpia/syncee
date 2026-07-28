@@ -1,28 +1,6 @@
 # Syncee
 
-A high-performance, flexible, optionally schema-driven one-way **data replication library** for Roblox that gives you complete control over how tables are replicated to clients with a simple intuitive API.
-
-## Key Features
-- **Simple & Flexible**: Easily replicate tables & buffers to specific clients with full control over replication targets.
-- **Buffer Support**
-- **Delta Replication**: Only replicates what changes within tables and buffers.
-- **Schemas**: Schemas can be defined per table if needed to minimize bandwidth.
-- **Ratelimiting**: Each table and buffer can be ratelimited individually.
-- **Proxies**: You can create proxies for tables that automatically handle updates, with near-full support when used as parameters in Syncee's API.
-
-## How it differs
-
-Compared to alternatives present, **Syncee** handles replication differently and provides more features.
-- You do not need to explicity mark tables for replication.
-- Replicating anything is through a single function call.
-- Not path-based. Tables and buffers are each assigned a single ID.
-- Doesn't modify tables in any way or force you to use proxies. They are optional.
-- Supports having multiple copies of same table and cyclic tables.
-- Supports buffer delta replication.
-
-Syncee does not handle sending the data to clients on its own. It lets you do this yourself so you can integrate it into your own networking solution.
-
----
+A lightweight, flexible, optionally schema-driven one-way **data replication library** for Roblox that gives you complete control over how tables are replicated to clients with a simple intuitive API.
 
 ## Documentation
 For usage guide and API reference, check the **[documentation](https://anexpia.github.io/syncee/)**.
