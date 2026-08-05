@@ -2,7 +2,7 @@
 # It is not intended for manual editing.
 format = 2
 name = "anexpia/syncee"
-version = "1.1.2"
+version = "1.1.3"
 target = "roblox"
 
 [graph."0x5eal/unzip@0.2.1 luau".pkg_ref]
@@ -16,10 +16,10 @@ frktest = [{ name = "itsfrank/frktest", version = "^0.0.4", index = "https://git
 luau-lsp = [{ name = "pesde/luau_lsp", version = "=1.66.1", index = "https://github.com/pesde-pkg/index", target = "lune" }, "dev"]
 stylua = [{ name = "pesde/stylua", version = "=2.4.1", index = "https://github.com/pesde-pkg/index", target = "lune" }, "dev"]
 
-[graph."anexpia/squish@6.1.3 roblox"]
-direct = ["squish", { name = "anexpia/squish", version = "^6.1.3", index = "default", target = "roblox" }, "standard"]
+[graph."anexpia/squish@6.1.4 roblox"]
+direct = ["squish", { name = "anexpia/squish", version = "^6.1.4", index = "default", target = "roblox" }, "standard"]
 
-[graph."anexpia/squish@6.1.3 roblox".pkg_ref]
+[graph."anexpia/squish@6.1.4 roblox".pkg_ref]
 ref_ty = "pesde"
 index_url = "https://github.com/pesde-pkg/index"
 
