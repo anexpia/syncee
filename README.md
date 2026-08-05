@@ -18,5 +18,5 @@ pesde add anexpia/syncee
 - **Wally**:
 Add to your `wally.toml` under `[dependencies]`:
 ```toml
-Syncee = "anexpia/syncee@1.1.3"
+Syncee = "anexpia/syncee@1.1.5"
 ```

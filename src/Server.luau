@@ -73,6 +73,9 @@ type privatedata = {
 	subschemas: {[any]: number}?,
 	subschemaid: number?,
 
+	structure: {[any]: any}?,
+	isarray: boolean?,
+
 	proxy: anyTable?,
 }
 
@@ -142,6 +145,20 @@ local function applySubschemaIfNeeded(childTable: anyTable, key: any, subschemas
 	return true
 end
 
+local function isKeySerialized(private: privatedata?, key: any): boolean
+	if not private then return true end
+
+	local structure = private.structure
+	if structure then
+		return not not structure[key]
+	elseif private.isarray then
+		return type(key) == "number"
+	end
+	
+	return true
+end
+
+
 local function assignsyncdata(t: anyTable | buffer): (syncdata)
 	local syncdata = syncdatastorage[t]
 	
@@ -176,6 +193,8 @@ local function assignsyncdata(t: anyTable | buffer): (syncdata)
 
 		if type(t) == 'table' then
 			for k, v in t :: any do 
+				if not isKeySerialized(private, k) then continue end
+
 				local vtype = type(v)
 				
 				local istable = vtype == "table"
@@ -272,11 +291,15 @@ function exposed.SetSchema(t: anyTable, schema: (number | string)?)
 		
 		if serdes then
 			local subschemas, subschemaidx = (serdes :: any).subschemas, (serdes :: any).subschemaIdx
+			local serdesname = (serdes :: any).name
+			local structure = if serdesname == "deltarecord" then (serdes :: any).structure else nil
 			local hassubschemas = not not (subschemas or subschemaidx)
 
 			data.subschemas = subschemas
 			data.subschemaid = subschemaidx
 			data.hassubschemas = hassubschemas
+			data.structure = structure
+			data.isarray = serdesname == "deltaarray"
 
 			local syncdata = hassubschemas and syncdatastorage[t]
 			if syncdata then 
@@ -302,6 +325,8 @@ function exposed.SetSchema(t: anyTable, schema: (number | string)?)
 			data.hassubschemas = false
 			data.subschemas = nil
 			data.subschemaid = nil
+			data.structure = nil
+			data.isarray = nil
 		end
 	end
 end
@@ -332,6 +357,9 @@ function exposed.Replicate(t: anyTable, key: any)
 	local syncdata = assertRegisteredTable(t)
 	local t = syncdata.t :: anyTable
 
+	local private = storage[t]
+	if not isKeySerialized(private, key) then return end
+
 	local value = t[key]
 	local rv = value
 
@@ -351,12 +379,8 @@ function exposed.Replicate(t: anyTable, key: any)
 		local othersyncdata = assignsyncdata(value)
 		syncdata.node:connect(othersyncdata.node, key)
 		
-		if newistable then
-			local private = storage[t]
-			
-			if private and private.hassubschemas then
-				applySubschemaIfNeeded(value, key, private.subschemas, private.subschemaid)
-			end
+		if newistable and private and private.hassubschemas then
+			applySubschemaIfNeeded(value, key, private.subschemas, private.subschemaid)
 		end
 	elseif value == nil then
 		rv = _nilvalue
@@ -387,6 +411,14 @@ function exposed.Set(t: anyTable, key: any, value: any)
 	local syncdata = syncdatastorage[t]
 
 	if syncdata then
+		local private = storage[t]
+		
+		if not isKeySerialized(private, key) then
+			local signal = syncdata.changesignal
+			if signal then signal:Fire(t, key, value) end
+			return
+		end
+
 		local t_old = type(old)
 		local t_new = type(value)
 
@@ -404,12 +436,8 @@ function exposed.Set(t: anyTable, key: any, value: any)
 			local othersyncdata = assignsyncdata(value)
 			syncdata.node:connect(othersyncdata.node, key)
 
-			if newistable then
-				local private = storage[t]
-
-				if private and private.hassubschemas then
-					applySubschemaIfNeeded(value, key, private.subschemas, private.subschemaid)
-				end
+			if newistable and private and private.hassubschemas then
+				applySubschemaIfNeeded(value, key, private.subschemas, private.subschemaid)
 			end
 		elseif value == nil then
 			rv = _nilvalue

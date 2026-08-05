@@ -86,7 +86,7 @@ exposed.server.SetRatelimit = implementation.SetRatelimit :: typeof(
 
 exposed.server.Replicate = implementation.Replicate :: typeof(
 	-- Replicates the value of the provided key, even if not changed.
-	function<T>(t: T, key: keyof<T>) 
+	function(t: anyTable, key: any) 
 		return __ end
 )
 
@@ -98,7 +98,7 @@ exposed.server.ReplicateBufferRegion = implementation.ReplicateBufferRegion :: t
 
 exposed.server.Set = implementation.Set :: typeof(
 	-- Sets 'key' of 't' to 'value', replicates the change then fires TableChangedSignal if present.
-	function<T, K>(t: T, key: K & keyof<T>, value: index<T, K>) 
+	function(t: anyTable, key: any, value: any) 
 		return __ end
 )
 
@@ -135,13 +135,13 @@ exposed.server.Clear = implementation.Clear :: typeof(
 
 exposed.server.Insert = implementation.Insert :: typeof(
 	-- table.insert(), but replicates the changes if on server and fires change signal.
-	function(t: anyTable, posOrValue: any, value: any?): ()
+	function(t: anyTable, posOrValue: any, value: any): ()
 		return __ end
 )
 
 exposed.server.Remove = implementation.Remove :: typeof(
 	-- table.remove(), but replicates the changes if on server and fires change signal.
-	function(t: anyTable, posOrValue: any, value: any?): ()
+	function(t: anyTable, posOrValue: any, value: any): ()
 		return __ end
 )
 
@@ -206,9 +206,7 @@ exposed.GetBufferChangedSignal = implementation.GetBufferChangedSignal :: typeof
 
 
 -- Waits until 'key' of the provided table is not nil, then returns the value. 
-function exposed.WaitForValue<T, K>(t: T, key: K & keyof<T>, timeout: number?): index<T, K>? 
-	local t: anyTable = t
-	
+function exposed.WaitForValue(t: anyTable, key: any, timeout: number?): any
 	if t[key] ~= nil then return t[key] end
 
 	local s = exposed.GetTableChangedSignal(t)
@@ -286,6 +284,7 @@ do
 		if underlyingSerDes.type == "boolean" then
 			return {
 				type = "table",
+				name = "deltaarray",
 				
 				-- 2 bits: 00 = nil, 01 = true, 10 = false, 11 = nilvalue
 
@@ -348,6 +347,7 @@ do
 		else 
 			return {
 				type = "table",
+				name = "deltaarray",
 				
 				-- 2 bits: 00 = nil, 10 = exists, 11 = nilvalue
 
@@ -465,7 +465,7 @@ do
 
 		return {
 			type = "table",
-			name = "record",
+			name = "deltarecord",
 			structure = schema,
 			
 			-- booleans: 2 bits: 00 = nil, 01 = true, 10 = false, 11 = nilvalue
@@ -560,6 +560,7 @@ do
 
 		return {
 			type = "table",
+			name = "deltamap",
 
 			ser = function(cursor: Cursor, x: {[any]: any})
 				if VALIDATION_ENABLED then beginValidationScope(cursor, "deltamap") assertSerializeType(cursor, x, "table") end
@@ -807,7 +808,7 @@ do
 		
 	-- Registers a table schema for use in serializing replicated tables and returns the id of the schema.
 	-- Same schemas should be registered on both server and client. Schemas are identified by name so order doesn't matter.
-	function exposed.RegisterSchema(name: string, serdes: Squish.SerDes<anyTable>): number?
+	function exposed.RegisterSchema(name: string, serdes: Squish.SerDes<any>): number?
 		Squish.validation.assertIsSerdes(serdes, 2, "Syncee.RegisterSchema()")
 		Squish.validation.assertSerdesType(serdes, "table", 2, "Syncee.RegisterSchema()")
 

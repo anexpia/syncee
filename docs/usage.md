@@ -124,8 +124,7 @@ Syncee.RegisterSchema("PlayerData", Squish.record({
 ```
 
 :::info
-Do note that while Syncee does use the schemas, it's not actually aware of how they're structured for performance reasons.\
-So if there's something not serialized by the schema inside a table, Syncee will still process it as if it is replicated.
+If a field is not serialized by an array or record serdes. it will not be treated as replicated.
 :::
 
 ### Binding Schemas to Tables
